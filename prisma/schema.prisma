@@ -1,0 +1,290 @@
+// CampaignGround CRM — Prisma schema
+// Local election campaign management
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ===== Campaign =====
+model Campaign {
+  id            String   @id @default(cuid())
+  candidateName String
+  officeSought  String
+  district      String
+  party         String?
+  electionDate  DateTime
+  fundraisingGoalCents Int
+  voteGoal      Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  donors       Donor[]
+  donations    Donation[]
+  events       Event[]
+  tasks        Task[]
+  volunteers   Volunteer[]
+  households   Household[]
+  voters       Voter[]
+  callLogs     CallLog[]
+  canvassLogs  CanvassLog[]
+}
+
+// ===== Precinct / District =====
+model Precinct {
+  id        String   @id @default(cuid())
+  name      String
+  code      String
+  ward      String?
+  totalRegisteredVoters Int?
+  createdAt DateTime @default(now())
+
+  households Household[]
+  voters     Voter[]
+}
+
+// ===== Household =====
+model Household {
+  id          String   @id @default(cuid())
+  address     String
+  unit        String?
+  city        String
+  state       String
+  zip         String
+  precinctId  String?
+  lat         Float?
+  lng         Float?
+  createdAt   DateTime @default(now())
+
+  precinct    Precinct? @relation(fields: [precinctId], references: [id])
+  campaign    Campaign  @relation(fields: [campaignId], references: [id])
+  campaignId  String
+  voters      Voter[]
+  canvassLogs CanvassLog[]
+}
+
+// ===== Voter =====
+model Voter {
+  id              String   @id @default(cuid())
+  firstName       String
+  lastName        String
+  email           String?
+  phone           String?
+  partyAffiliation String? // e.g., Dem, Rep, Ind, Green, Lib
+  registeredAddress String?
+  birthYear       Int?
+  voterSince      Int?
+  votedIn2024     Boolean?
+  votedIn2022     Boolean?
+  votedIn2020     Boolean?
+  supportLevel    String   @default("unknown") // strong-support, lean-support, undecided, lean-oppose, strong-oppose, unknown
+  volunteer        Boolean  @default(false)
+  hasYardSign     Boolean  @default(false)
+  hasBumperSticker Boolean @default(false)
+  notes           String?
+  tags            String?  // comma separated
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  campaignId      String
+  campaign        Campaign @relation(fields: [campaignId], references: [id])
+
+  householdId     String?
+  household       Household? @relation(fields: [householdId], references: [id])
+
+  precinctId      String?
+  precinct        Precinct?  @relation(fields: [precinctId], references: [id])
+
+  donations       Donation[]
+  callLogs        CallLog[]
+  canvassLogs     CanvassLog[]
+  eventAttendees  EventAttendee[]
+  assignedTasks   Task[]
+  donor           Donor?
+}
+
+// ===== Volunteer =====
+model Volunteer {
+  id          String   @id @default(cuid())
+  firstName   String
+  lastName    String
+  email       String?
+  phone       String?
+  role        String   @default("general") // coordinator, canvasser, phone-banker, designer, data, general
+  skills      String?  // comma separated
+  hoursPledged Int?
+  hoursLogged  Float    @default(0)
+  status      String   @default("active") // active, inactive, lead
+  zip         String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+
+  assignedTasks Task[]
+  eventAttendees EventAttendee[]
+  callLogs    CallLog[]
+  canvassLogs CanvassLog[]
+}
+
+// ===== Donor =====
+model Donor {
+  id          String   @id @default(cuid())
+  firstName   String
+  lastName    String
+  email       String?
+  phone       String?
+  address     String?
+  city        String?
+  state       String?
+  zip         String?
+  employer    String?
+  occupation  String?
+  type        String   @default("individual") // individual, pac, small-business, family
+  capacity    String   @default("unknown") // major, mid, small, unknown
+  isRecurring Boolean  @default(false)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+
+  donations   Donation[]
+  voterId     String? @unique
+  voter       Voter?   @relation(fields: [voterId], references: [id])
+}
+
+// ===== Donation =====
+model Donation {
+  id          String   @id @default(cuid())
+  amountCents Int
+  donationDate DateTime @default(now())
+  method      String   @default("online") // online, check, cash, in-kind
+  inKindDescription String?
+  earmarkNote String?
+  complianceVerified Boolean @default(false)
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+
+  donorId     String
+  donor       Donor   @relation(fields: [donorId], references: [id])
+  voterId     String?
+  voter       Voter?  @relation(fields: [voterId], references: [id])
+}
+
+// ===== Event =====
+model Event {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  type        String   @default("campaign") // town-hall, canvass-kickoff, phone-bank, fundraiser, rally, volunteer-meeting
+  startTime   DateTime
+  endTime     DateTime?
+  location    String?
+  address     String?
+  capacity    Int?
+  status      String   @default("scheduled") // scheduled, completed, cancelled
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+
+  attendees   EventAttendee[]
+  tasks       Task[]
+}
+
+model EventAttendee {
+  id        String   @id @default(cuid())
+  eventId   String
+  voterId   String?
+  volunteerId String?
+  rsvpStatus String  @default("registered") // registered, attended, no-show, cancelled
+  createdAt DateTime @default(now())
+
+  event     Event     @relation(fields: [eventId], references: [id])
+  voter     Voter?    @relation(fields: [voterId], references: [id])
+  volunteer Volunteer? @relation(fields: [volunteerId], references: [id])
+}
+
+// ===== Task =====
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  status      String   @default("todo") // todo, in-progress, done, blocked
+  priority    String   @default("medium") // low, medium, high, urgent
+  dueDate     DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+
+  assignedVolunteerId String?
+  volunteer          Volunteer? @relation(fields: [assignedVolunteerId], references: [id])
+
+  assignedVoterId String?
+  voter           Voter?  @relation(fields: [assignedVoterId], references: [id])
+
+  eventId String?
+  event   Event?  @relation(fields: [eventId], references: [id])
+}
+
+// ===== CanvassLog (door knock) =====
+model CanvassLog {
+  id              String   @id @default(cuid())
+  householdId     String?
+  household       Household? @relation(fields: [householdId], references: [id])
+  voterId         String?
+  voter           Voter?     @relation(fields: [voterId], references: [id])
+  volunteerId     String?
+  volunteer       Volunteer? @relation(fields: [volunteerId], references: [id])
+  campaignId      String
+  campaign        Campaign   @relation(fields: [campaignId], references: [id])
+
+  outcome         String   @default("not-home") // canvassed, not-home, refused, wrong-address, language-barrier
+  supportLevel    String?  // captured: strong-support, lean-support, undecided, lean-oppose, strong-oppose
+  yardSign        Boolean  @default(false)
+  issuePriority   String?  // comma separated tags: housing, schools, public-safety, budget, parks
+  notes           String?
+  contactedAt     DateTime @default(now())
+  createdAt       DateTime @default(now())
+}
+
+// ===== CallLog (phone bank) =====
+model CallLog {
+  id            String   @id @default(cuid())
+  voterId       String?
+  voter         Voter?   @relation(fields: [voterId], references: [id])
+  volunteerId   String?
+  volunteer     Volunteer? @relation(fields: [volunteerId], references: [id])
+  campaignId    String
+  campaign      Campaign @relation(fields: [campaignId], references: [id])
+
+  outcome       String   @default("no-answer") // contacted, no-answer, voicemail, wrong-number, refused, call-back
+  supportLevel  String?
+  issuePriority String?
+  notes         String?
+  callLengthSec Int      @default(0)
+  calledAt      DateTime @default(now())
+  createdAt     DateTime @default(now())
+}
+
+// ===== Outreach Metrics Snapshot (denormalized for dashboard) =====
+model Metric {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Float
+  updatedAt DateTime @updatedAt
+}
