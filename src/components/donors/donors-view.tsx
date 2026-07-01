@@ -28,6 +28,8 @@ import {
   Calendar,
   RotateCw,
 } from "lucide-react";
+import { useApp } from "@/lib/store";
+import { useCurrentRole } from "@/lib/memberships";
 import { PersonAvatar } from "@/components/common/person-avatar";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -64,8 +66,11 @@ export function DonorsView() {
   const [capacity, setCapacity] = useState("all");
   const [type, setType] = useState("all");
   const [recordOpen, setRecordOpen] = useState(false);
+  const campaignId = useApp((s) => s.currentCampaignId);
+  const role = useCurrentRole();
 
   const params = new URLSearchParams();
+  if (campaignId) params.set("campaignId", campaignId);
   if (q) params.set("q", q);
   if (capacity !== "all") params.set("capacity", capacity);
   if (type !== "all") params.set("type", type);
@@ -73,12 +78,14 @@ export function DonorsView() {
   const { data, isLoading } = useQuery({
     queryKey: ["donors", params.toString()],
     queryFn: async () => (await fetch(`/api/donors?${params}`)).json(),
+    enabled: !!campaignId,
   });
   const donors: any[] = data?.items ?? [];
 
   const { data: donationsData } = useQuery({
-    queryKey: ["all-donations"],
-    queryFn: async () => (await fetch("/api/donations?limit=200")).json(),
+    queryKey: ["all-donations", campaignId],
+    queryFn: async () => (await fetch(`/api/donations?limit=200&campaignId=${campaignId}`)).json(),
+    enabled: !!campaignId,
   });
   const recentDonations: any[] = donationsData?.items ?? [];
 
@@ -89,6 +96,14 @@ export function DonorsView() {
 
   // Top donors
   const topDonors = [...donors].sort((a, b) => (b.totalDonatedCents ?? 0) - (a.totalDonatedCents ?? 0)).slice(0, 5);
+
+  if (role && role !== "owner") {
+    return (
+      <div className="p-6 text-sm text-muted-foreground">
+        You don't have access to donor and donation data.
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-4">

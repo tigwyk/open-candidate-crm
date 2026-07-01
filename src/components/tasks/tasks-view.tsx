@@ -40,6 +40,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatDate, relativeTime } from "@/lib/format";
+import { useApp } from "@/lib/store";
 
 const STATUS_INFO: Record<string, { label: string; color: string; icon: any; dot: string }> = {
   todo: { label: "To do", color: "bg-slate-500/10 text-slate-700 dark:text-slate-300", icon: Circle, dot: "bg-slate-400" },
@@ -61,16 +62,19 @@ export function TasksView() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [createOpen, setCreateOpen] = useState(false);
+  const campaignId = useApp((s) => s.currentCampaignId);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["tasks"],
-    queryFn: async () => (await fetch("/api/tasks")).json(),
+    queryKey: ["tasks", campaignId],
+    queryFn: async () => (await fetch(`/api/tasks?campaignId=${campaignId}`)).json(),
+    enabled: !!campaignId,
   });
   const tasks: any[] = data?.items ?? [];
 
   const { data: volunteersData } = useQuery({
-    queryKey: ["tasks-volunteers"],
-    queryFn: async () => (await fetch("/api/volunteers")).json(),
+    queryKey: ["tasks-volunteers", campaignId],
+    queryFn: async () => (await fetch(`/api/volunteers?campaignId=${campaignId}`)).json(),
+    enabled: !!campaignId,
   });
   const volunteers: any[] = volunteersData?.items ?? [];
 
@@ -126,6 +130,7 @@ export function TasksView() {
           open={createOpen}
           onOpenChange={setCreateOpen}
           volunteers={volunteers}
+          campaignId={campaignId}
           onSaved={() => {
             qc.invalidateQueries({ queryKey: ["tasks"] });
             qc.invalidateQueries({ queryKey: ["dashboard"] });
@@ -259,9 +264,9 @@ function SummaryCard({ icon: Icon, label, value, sub, accent }: {
   );
 }
 
-function CreateTaskDialog({ open, onOpenChange, volunteers, onSaved }: {
+function CreateTaskDialog({ open, onOpenChange, volunteers, campaignId, onSaved }: {
   open: boolean; onOpenChange: (o: boolean) => void;
-  volunteers: any[]; onSaved: () => void;
+  volunteers: any[]; campaignId: string | null; onSaved: () => void;
 }) {
   const { toast } = useToast();
   const [title, setTitle] = useState("");
@@ -286,6 +291,7 @@ function CreateTaskDialog({ open, onOpenChange, volunteers, onSaved }: {
         priority,
         dueDate: dueDate ? new Date(dueDate).toISOString() : null,
         assignedVolunteerId: assignedVolunteerId || null,
+        campaignId,
       }),
     });
     setSaving(false);

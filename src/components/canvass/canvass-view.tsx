@@ -41,6 +41,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { SUPPORT_LEVELS } from "@/lib/types";
+import { useApp } from "@/lib/store";
 
 const OUTCOME_INFO: Record<string, { label: string; color: string; icon: any }> = {
   canvassed: { label: "Canvassed", color: "text-emerald-700 bg-emerald-500/10 dark:text-emerald-300", icon: CheckCircle2 },
@@ -59,33 +60,39 @@ export function CanvassView() {
   const [logOpen, setLogOpen] = useState(false);
   const [activeVolunteerId, setActiveVolunteerId] = useState("");
   const [claimedVoterId, setClaimedVoterId] = useState<string | null>(null);
+  const campaignId = useApp((s) => s.currentCampaignId);
 
   const params = new URLSearchParams();
+  if (campaignId) params.set("campaignId", campaignId);
   if (outcomeFilter !== "all") params.set("outcome", outcomeFilter);
 
   const { data: logsData, isLoading } = useQuery({
     queryKey: ["canvass-logs", params.toString()],
     queryFn: async () => (await fetch(`/api/canvass?${params}`)).json(),
+    enabled: !!campaignId,
     refetchInterval: 10_000,
   });
   const logs: any[] = logsData?.items ?? [];
 
   const { data: votersData } = useQuery({
-    queryKey: ["canvass-voters"],
-    queryFn: async () => (await fetch(`/api/voters?limit=200`)).json(),
+    queryKey: ["canvass-voters", campaignId],
+    queryFn: async () => (await fetch(`/api/voters?limit=200&campaignId=${campaignId}`)).json(),
+    enabled: !!campaignId,
     refetchInterval: 10_000,
   });
   const voters: any[] = votersData?.items ?? [];
 
   const { data: volunteersData } = useQuery({
-    queryKey: ["canvass-volunteers"],
-    queryFn: async () => (await fetch("/api/volunteers")).json(),
+    queryKey: ["canvass-volunteers", campaignId],
+    queryFn: async () => (await fetch(`/api/volunteers?campaignId=${campaignId}`)).json(),
+    enabled: !!campaignId,
   });
   const volunteers: any[] = volunteersData?.items ?? [];
 
   const { data: claimsData } = useQuery({
-    queryKey: ["claims", "canvass"],
-    queryFn: async () => (await fetch("/api/claims?channel=canvass")).json(),
+    queryKey: ["claims", "canvass", campaignId],
+    queryFn: async () => (await fetch(`/api/claims?channel=canvass&campaignId=${campaignId}`)).json(),
+    enabled: !!campaignId,
     refetchInterval: 8_000,
   });
   const claims: any[] = claimsData?.items ?? [];

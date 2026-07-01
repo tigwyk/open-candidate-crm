@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+import { useApp } from "@/lib/store";
 
 const ROLE_INFO: Record<string, { label: string; color: string; icon: any }> = {
   coordinator: { label: "Coordinator", color: "bg-violet-500/10 text-violet-700 dark:text-violet-300", icon: Star },
@@ -49,10 +50,12 @@ export function VolunteersView() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [roleFilter, setRoleFilter] = useState<string>("all");
+  const campaignId = useApp((s) => s.currentCampaignId);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["volunteers"],
-    queryFn: async () => (await fetch("/api/volunteers")).json(),
+    queryKey: ["volunteers", campaignId],
+    queryFn: async () => (await fetch(`/api/volunteers?campaignId=${campaignId}`)).json(),
+    enabled: !!campaignId,
   });
 
   const volunteers: any[] = data?.items ?? [];

@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
-import { requireSession } from "@/lib/api-auth";
+import { requireCampaignAccess } from "@/lib/api-auth";
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const outcome = sp.get("outcome");
   const precinctId = sp.get("precinctId");
   const limit = Math.min(200, parseInt(sp.get("limit") ?? "100"));
+  const campaignId = sp.get("campaignId");
+  const access = await requireCampaignAccess(campaignId);
+  if ("error" in access) return access.error;
 
-  const where: Prisma.CanvassLogWhereInput = {};
+  const where: Prisma.CanvassLogWhereInput = { campaignId: access.campaignId };
   if (outcome) where.outcome = outcome;
   if (precinctId) where.voter = { precinctId };
 
@@ -34,19 +37,17 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const unauthorized = await requireSession();
-  if (unauthorized) return unauthorized;
-
   const body = await req.json();
   const { voterId, householdId, volunteerId, campaignId, outcome, supportLevel, yardSign, issuePriority, notes } = body;
-  if (!campaignId) return NextResponse.json({ error: "campaignId required" }, { status: 400 });
+  const access = await requireCampaignAccess(campaignId);
+  if ("error" in access) return access.error;
 
   const log = await db.canvassLog.create({
     data: {
       voterId,
       householdId,
       volunteerId,
-      campaignId,
+      campaignId: access.campaignId,
       outcome: outcome ?? "not-home",
       supportLevel,
       yardSign: yardSign ?? false,

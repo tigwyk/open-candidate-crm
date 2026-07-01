@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
-import { requireSession } from "@/lib/api-auth";
+import { requireCampaignAccess } from "@/lib/api-auth";
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const campaignId = sp.get("campaignId");
-
-  const where: Prisma.VolunteerWhereInput = {};
-  if (campaignId) where.campaignId = campaignId;
+  const access = await requireCampaignAccess(campaignId);
+  if ("error" in access) return access.error;
 
   const volunteers = await db.volunteer.findMany({
-    where,
+    where: { campaignId: access.campaignId },
     orderBy: [{ status: "asc" }, { hoursLogged: "desc" }],
     include: {
       _count: { select: { assignedTasks: true, canvassLogs: true, callLogs: true } },
@@ -22,12 +21,16 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const unauthorized = await requireSession();
-  if (unauthorized) return unauthorized;
-
   const body = await req.json();
   const { id, status, role, hoursLogged, notes } = body;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+  const volunteer = await db.volunteer.findUnique({ where: { id }, select: { campaignId: true } });
+  if (!volunteer) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  const access = await requireCampaignAccess(volunteer.campaignId);
+  if ("error" in access) return access.error;
+
   const data: Prisma.VolunteerUpdateInput = {};
   if (status) data.status = status;
   if (role) data.role = role;

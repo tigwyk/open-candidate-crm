@@ -1,6 +1,7 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
+import { db } from "@/lib/db";
 
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
@@ -13,22 +14,26 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        // ADMIN_PASSWORD_HASH must have its `$` characters escaped as `\$` in
-        // .env — Next.js's env loader does shell-style $VAR expansion, which
-        // otherwise mangles bcrypt hashes (they're full of `$` delimiters).
-        const adminEmail = process.env.ADMIN_EMAIL;
-        const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH;
-        if (!adminEmail || !adminPasswordHash) {
-          throw new Error("Admin credentials are not configured");
-        }
         if (!credentials?.email || !credentials?.password) return null;
-        if (credentials.email !== adminEmail) return null;
 
-        const valid = await bcrypt.compare(credentials.password, adminPasswordHash);
+        const user = await db.user.findUnique({ where: { email: credentials.email } });
+        if (!user) return null;
+
+        const valid = await bcrypt.compare(credentials.password, user.passwordHash);
         if (!valid) return null;
 
-        return { id: "admin", email: adminEmail };
+        return { id: user.id, email: user.email, name: user.name };
       },
     }),
   ],
+  callbacks: {
+    async jwt({ token, user }) {
+      if (user) token.uid = user.id;
+      return token;
+    },
+    async session({ session, token }) {
+      if (session.user) session.user.id = token.uid as string;
+      return session;
+    },
+  },
 };

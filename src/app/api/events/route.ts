@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
-import { requireSession } from "@/lib/api-auth";
+import { requireCampaignAccess } from "@/lib/api-auth";
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const upcoming = sp.get("upcoming") === "1";
+  const campaignId = sp.get("campaignId");
+  const access = await requireCampaignAccess(campaignId);
+  if ("error" in access) return access.error;
 
-  const where: Prisma.EventWhereInput = {};
+  const where: Prisma.EventWhereInput = { campaignId: access.campaignId };
   if (upcoming) {
     where.startTime = { gte: new Date() };
     where.status = "scheduled";
@@ -32,21 +35,14 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const unauthorized = await requireSession();
-  if (unauthorized) return unauthorized;
-
   const body = await req.json();
   const { title, type, startTime, endTime, location, address, capacity, description, campaignId } = body;
   if (!title || !startTime) {
     return NextResponse.json({ error: "missing fields" }, { status: 400 });
   }
-  // If no campaignId provided, use the first campaign
-  let cid = campaignId;
-  if (!cid) {
-    const c = await db.campaign.findFirst({ orderBy: { createdAt: "asc" } });
-    if (!c) return NextResponse.json({ error: "no campaign" }, { status: 400 });
-    cid = c.id;
-  }
+  const access = await requireCampaignAccess(campaignId);
+  if ("error" in access) return access.error;
+
   const event = await db.event.create({
     data: {
       title,
@@ -57,7 +53,7 @@ export async function POST(req: NextRequest) {
       address,
       capacity,
       description,
-      campaignId: cid,
+      campaignId: access.campaignId,
       status: "scheduled",
     },
   });
@@ -65,12 +61,15 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const unauthorized = await requireSession();
-  if (unauthorized) return unauthorized;
-
   const body = await req.json();
   const { id, status } = body;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+  const event = await db.event.findUnique({ where: { id }, select: { campaignId: true } });
+  if (!event) return NextResponse.json({ error: "not found" }, { status: 404 });
+  const access = await requireCampaignAccess(event.campaignId);
+  if ("error" in access) return access.error;
+
   const updated = await db.event.update({
     where: { id },
     data: { status },

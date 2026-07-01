@@ -42,6 +42,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { SUPPORT_LEVELS } from "@/lib/types";
+import { useApp } from "@/lib/store";
 
 const OUTCOME_INFO: Record<string, { label: string; color: string; icon: any }> = {
   contacted: { label: "Contacted", color: "text-emerald-700 bg-emerald-500/10 dark:text-emerald-300", icon: CheckCircle2 },
@@ -73,33 +74,39 @@ export function PhoneBankView() {
   const [logOpen, setLogOpen] = useState(false);
   const [queueIdx, setQueueIdx] = useState(0);
   const [activeVolunteerId, setActiveVolunteerId] = useState("");
+  const campaignId = useApp((s) => s.currentCampaignId);
 
   const params = new URLSearchParams();
+  if (campaignId) params.set("campaignId", campaignId);
   if (outcomeFilter !== "all") params.set("outcome", outcomeFilter);
 
   const { data: logsData, isLoading } = useQuery({
     queryKey: ["call-logs", params.toString()],
     queryFn: async () => (await fetch(`/api/calls?${params}`)).json(),
+    enabled: !!campaignId,
     refetchInterval: 10_000,
   });
   const logs: any[] = logsData?.items ?? [];
 
   const { data: votersData } = useQuery({
-    queryKey: ["phonebank-voters"],
-    queryFn: async () => (await fetch(`/api/voters?limit=200`)).json(),
+    queryKey: ["phonebank-voters", campaignId],
+    queryFn: async () => (await fetch(`/api/voters?limit=200&campaignId=${campaignId}`)).json(),
+    enabled: !!campaignId,
     refetchInterval: 10_000,
   });
   const voters: any[] = votersData?.items ?? [];
 
   const { data: volunteersData } = useQuery({
-    queryKey: ["phonebank-volunteers"],
-    queryFn: async () => (await fetch("/api/volunteers")).json(),
+    queryKey: ["phonebank-volunteers", campaignId],
+    queryFn: async () => (await fetch(`/api/volunteers?campaignId=${campaignId}`)).json(),
+    enabled: !!campaignId,
   });
   const volunteers: any[] = volunteersData?.items ?? [];
 
   const { data: claimsData } = useQuery({
-    queryKey: ["claims", "call"],
-    queryFn: async () => (await fetch("/api/claims?channel=call")).json(),
+    queryKey: ["claims", "call", campaignId],
+    queryFn: async () => (await fetch(`/api/claims?channel=call&campaignId=${campaignId}`)).json(),
+    enabled: !!campaignId,
     refetchInterval: 8_000,
   });
   const claims: any[] = claimsData?.items ?? [];

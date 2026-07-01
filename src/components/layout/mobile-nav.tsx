@@ -1,6 +1,7 @@
 "use client";
 
 import { useApp, type Module } from "@/lib/store";
+import { useCurrentRole } from "@/lib/memberships";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -28,13 +29,14 @@ interface NavItem {
   id: Module;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
+  ownerOnly?: boolean;
 }
 
 const NAV: NavItem[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "voters", label: "Voters", icon: Users },
   { id: "volunteers", label: "Volunteers", icon: HeartHandshake },
-  { id: "donors", label: "Donors", icon: DollarSign },
+  { id: "donors", label: "Donors", icon: DollarSign, ownerOnly: true },
   { id: "canvass", label: "Canvassing", icon: DoorOpen },
   { id: "phonebank", label: "Phone Bank", icon: PhoneCall },
   { id: "events", label: "Events", icon: CalendarDays },
@@ -46,6 +48,7 @@ export function MobileNav() {
   const setModule = useApp((s) => s.set);
   const setOpen = useApp((s) => s.setSidebar);
   const open = useApp((s) => s.sidebarOpen);
+  const role = useCurrentRole();
 
   const handle = (m: Module) => {
     setModule(m);
@@ -69,7 +72,7 @@ export function MobileNav() {
           </SheetTitle>
         </SheetHeader>
         <nav className="px-3 py-3 space-y-0.5">
-          {NAV.map((item) => {
+          {NAV.filter((item) => !item.ownerOnly || role === "owner").map((item) => {
             const Icon = item.icon;
             const isActive = active === item.id;
             return (

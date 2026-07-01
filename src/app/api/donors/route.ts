@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
+import { requireCampaignAccess } from "@/lib/api-auth";
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const capacity = sp.get("capacity");
   const type = sp.get("type");
   const q = sp.get("q") ?? "";
+  const campaignId = sp.get("campaignId");
+  const access = await requireCampaignAccess(campaignId, { role: "owner" });
+  if ("error" in access) return access.error;
 
-  const where: Prisma.DonorWhereInput = {};
+  const where: Prisma.DonorWhereInput = { campaignId: access.campaignId };
   if (capacity) where.capacity = capacity;
   if (type) where.type = type;
   if (q) {

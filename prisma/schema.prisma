@@ -32,6 +32,35 @@ model Campaign {
   voters       Voter[]
   callLogs     CallLog[]
   canvassLogs  CanvassLog[]
+  precincts    Precinct[]
+  contactClaims ContactClaim[]
+  memberships  CampaignMembership[]
+}
+
+// ===== User / Membership (multi-campaign access) =====
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships  CampaignMembership[]
+}
+
+model CampaignMembership {
+  id         String   @id @default(cuid())
+  role       String   @default("member") // "owner" | "member"
+  createdAt  DateTime @default(now())
+
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+
+  @@unique([userId, campaignId])
 }
 
 // ===== Precinct / District =====
@@ -42,6 +71,9 @@ model Precinct {
   ward      String?
   totalRegisteredVoters Int?
   createdAt DateTime @default(now())
+
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
 
   households Household[]
   voters     Voter[]
@@ -293,6 +325,9 @@ model ContactClaim {
   volunteerId String
   volunteer   Volunteer @relation(fields: [volunteerId], references: [id])
   claimedAt   DateTime @default(now())
+
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
 
   @@unique([voterId, channel])
 }

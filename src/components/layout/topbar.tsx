@@ -2,15 +2,22 @@
 
 import { useSyncExternalStore } from "react";
 import { useApp } from "@/lib/store";
-import { Search, Bell, Plus, Menu, LogOut, Sun, Moon } from "lucide-react";
+import { Search, Bell, Plus, Menu, LogOut, Sun, Moon, ChevronsUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { MobileNav } from "./mobile-nav";
 import { useApp as useAppStore } from "@/lib/store";
 import { Badge } from "@/components/ui/badge";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { useTheme } from "next-themes";
+import { useMemberships } from "@/lib/memberships";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 // Reports true only after hydration, without calling setState in an effect —
 // avoids a hydration mismatch between the server render and the client's
@@ -34,6 +41,14 @@ const TITLES: Record<string, { title: string; subtitle: string }> = {
   tasks: { title: "Tasks", subtitle: "Coordinator workflow and team assignments" },
 };
 
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/);
+  return parts
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
 export function Topbar() {
   const active = useApp((s) => s.active);
   const setSidebar = useAppStore((s) => s.setSidebar);
@@ -41,6 +56,15 @@ export function Topbar() {
 
   const { resolvedTheme, setTheme } = useTheme();
   const mounted = useHasMounted();
+
+  const { data: session } = useSession();
+  const { data: membershipsData } = useMemberships();
+  const memberships = membershipsData?.items ?? [];
+  const currentCampaignId = useApp((s) => s.currentCampaignId);
+  const setCampaign = useApp((s) => s.setCampaign);
+  const currentMembership = memberships.find((m) => m.campaignId === currentCampaignId);
+
+  const displayName = session?.user?.name ?? session?.user?.email ?? "—";
 
   return (
     <header className="h-16 border-b bg-card/60 backdrop-blur-sm flex items-center gap-3 px-4 md:px-6 sticky top-0 z-30">
@@ -74,15 +98,36 @@ export function Topbar() {
         <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-accent" />
       </Button>
 
+      {memberships.length > 1 && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="h-8 text-xs max-w-[160px]">
+              <span className="truncate">{currentMembership?.campaignName ?? "Select campaign"}</span>
+              <ChevronsUpDown className="size-3.5 ml-1 flex-shrink-0" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {memberships.map((m) => (
+              <DropdownMenuItem key={m.campaignId} onClick={() => setCampaign(m.campaignId)}>
+                <div className="flex flex-col">
+                  <span className="text-sm">{m.campaignName}</span>
+                  <span className="text-[10px] text-muted-foreground">{m.officeSought}</span>
+                </div>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+
       <div className="hidden sm:flex items-center gap-2 pl-2 border-l">
         <Avatar className="size-8">
           <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
-            MR
+            {initials(displayName)}
           </AvatarFallback>
         </Avatar>
         <div className="leading-tight hidden md:block">
-          <div className="text-xs font-medium">Maya Reyes</div>
-          <div className="text-[10px] text-muted-foreground">Field Director</div>
+          <div className="text-xs font-medium truncate max-w-[140px]">{displayName}</div>
+          <div className="text-[10px] text-muted-foreground capitalize">{currentMembership?.role ?? "—"}</div>
         </div>
         <Button
           variant="ghost"

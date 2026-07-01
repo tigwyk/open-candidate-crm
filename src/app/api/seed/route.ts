@@ -1,37 +1,91 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import type { Household, Voter } from "@prisma/client";
-import { requireSession } from "@/lib/api-auth";
+import { requireUser } from "@/lib/api-auth";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
 
-// GET /api/seed — idempotent: only seeds if no campaign exists
+// GET /api/seed — first-run bootstrap only. Creates the demo campaign, a demo
+// owner user, and the membership linking them, but only if no User exists yet
+// (i.e. a genuinely fresh install with nobody able to log in). No auth
+// required here, since there's nobody to authenticate as before this runs.
 export async function GET() {
-  const unauthorized = await requireSession();
-  if (unauthorized) return unauthorized;
-
   try {
-    const existing = await db.campaign.count();
-    if (existing > 0) {
-      return NextResponse.json({ ok: true, seeded: false, message: "Already seeded" });
+    const existingUsers = await db.user.count();
+    if (existingUsers > 0) {
+      return NextResponse.json({ ok: true, seeded: false, message: "Already bootstrapped" });
     }
-    await seedAll();
-    return NextResponse.json({ ok: true, seeded: true });
+
+    const campaign = await seedAll();
+
+    // Reuse ADMIN_EMAIL/ADMIN_PASSWORD_HASH from Phase 1 if present, so the
+    // credential that already worked keeps working. Otherwise generate one.
+    const email = process.env.ADMIN_EMAIL ?? "admin@example.com";
+    let passwordHash = process.env.ADMIN_PASSWORD_HASH;
+    let generatedPassword: string | null = null;
+    if (!passwordHash) {
+      generatedPassword = crypto.randomBytes(9).toString("base64url");
+      passwordHash = await bcrypt.hash(generatedPassword, 10);
+    }
+
+    const user = await db.user.create({
+      data: { email, passwordHash, name: "Campaign Owner" },
+    });
+    await db.campaignMembership.create({
+      data: { userId: user.id, campaignId: campaign.id, role: "owner" },
+    });
+
+    return NextResponse.json({
+      ok: true,
+      seeded: true,
+      campaignId: campaign.id,
+      loginEmail: email,
+      ...(generatedPassword ? { generatedPassword } : {}),
+    });
   } catch (e) {
     console.error("Seed error:", e);
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });
   }
 }
 
-async function seedAll() {
+// POST /api/seed — creates an *additional* campaign and grants the calling
+// (already logged-in) user owner membership on it, without touching any
+// existing campaign/user data.
+export async function POST(req: NextRequest) {
+  const access = await requireUser();
+  if ("error" in access) return access.error;
+
+  try {
+    const body = await req.json().catch(() => ({}));
+    const campaign = await seedAll(body);
+    await db.campaignMembership.create({
+      data: { userId: access.userId, campaignId: campaign.id, role: "owner" },
+    });
+    return NextResponse.json({ ok: true, campaignId: campaign.id });
+  } catch (e) {
+    console.error("Seed error:", e);
+    return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });
+  }
+}
+
+async function seedAll(overrides?: {
+  candidateName?: string;
+  officeSought?: string;
+  district?: string;
+  party?: string;
+  voteGoal?: number;
+  fundraisingGoalCents?: number;
+}) {
   // ===== Campaign =====
   const campaign = await db.campaign.create({
     data: {
-      candidateName: "Jordan Avery",
-      officeSought: "City Council, District 4",
-      district: "District 4",
-      party: "Nonpartisan",
+      candidateName: overrides?.candidateName ?? "Jordan Avery",
+      officeSought: overrides?.officeSought ?? "City Council, District 4",
+      district: overrides?.district ?? "District 4",
+      party: overrides?.party ?? "Nonpartisan",
       electionDate: new Date(Date.now() + 47 * 86_400_000),
-      fundraisingGoalCents: 75_000_00,
-      voteGoal: 4200,
+      fundraisingGoalCents: overrides?.fundraisingGoalCents ?? 75_000_00,
+      voteGoal: overrides?.voteGoal ?? 4200,
     },
   });
 
@@ -46,7 +100,7 @@ async function seedAll() {
   const precincts = await Promise.all(
     precinctNames.map((p) =>
       db.precinct.create({
-        data: { ...p, totalRegisteredVoters: 800 + Math.floor(Math.random() * 600) },
+        data: { ...p, totalRegisteredVoters: 800 + Math.floor(Math.random() * 600), campaignId: campaign.id },
       })
     )
   );
@@ -345,4 +399,6 @@ async function seedAll() {
       },
     });
   }
+
+  return campaign;
 }

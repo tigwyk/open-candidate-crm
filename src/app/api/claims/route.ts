@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/api-auth";
+import { requireCampaignAccess } from "@/lib/api-auth";
 
 const CLAIM_TTL_MS = 5 * 60 * 1000;
 
@@ -9,15 +9,15 @@ function isStale(claimedAt: Date) {
 }
 
 export async function GET(req: NextRequest) {
-  const unauthorized = await requireSession();
-  if (unauthorized) return unauthorized;
-
   const sp = req.nextUrl.searchParams;
   const channel = sp.get("channel");
   if (!channel) return NextResponse.json({ error: "channel required" }, { status: 400 });
+  const campaignId = sp.get("campaignId");
+  const access = await requireCampaignAccess(campaignId);
+  if ("error" in access) return access.error;
 
   const claims = await db.contactClaim.findMany({
-    where: { channel },
+    where: { channel, campaignId: access.campaignId },
     include: {
       volunteer: { select: { firstName: true, lastName: true } },
     },
@@ -37,14 +37,16 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const unauthorized = await requireSession();
-  if (unauthorized) return unauthorized;
-
   const body = await req.json();
   const { voterId, channel, volunteerId } = body;
   if (!voterId || !channel || !volunteerId) {
     return NextResponse.json({ error: "voterId, channel, volunteerId required" }, { status: 400 });
   }
+
+  const voter = await db.voter.findUnique({ where: { id: voterId }, select: { campaignId: true } });
+  if (!voter) return NextResponse.json({ error: "voter not found" }, { status: 404 });
+  const access = await requireCampaignAccess(voter.campaignId);
+  if ("error" in access) return access.error;
 
   const existing = await db.contactClaim.findUnique({
     where: { voterId_channel: { voterId, channel } },
@@ -65,7 +67,7 @@ export async function POST(req: NextRequest) {
 
   const claim = await db.contactClaim.upsert({
     where: { voterId_channel: { voterId, channel } },
-    create: { voterId, channel, volunteerId },
+    create: { voterId, channel, volunteerId, campaignId: voter.campaignId },
     update: { volunteerId, claimedAt: new Date() },
   });
 
@@ -73,9 +75,6 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const unauthorized = await requireSession();
-  if (unauthorized) return unauthorized;
-
   const body = await req.json();
   const { voterId, channel, volunteerId } = body;
   if (!voterId || !channel || !volunteerId) {
@@ -87,6 +86,9 @@ export async function DELETE(req: NextRequest) {
   });
 
   if (!existing) return NextResponse.json({ ok: true });
+
+  const access = await requireCampaignAccess(existing.campaignId);
+  if ("error" in access) return access.error;
 
   if (existing.volunteerId !== volunteerId && !isStale(existing.claimedAt)) {
     return NextResponse.json({ error: "not your claim" }, { status: 403 });
