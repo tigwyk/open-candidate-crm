@@ -1,7 +1,8 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { useApp } from "@/lib/store";
-import { Search, Bell, Plus, Menu, LogOut } from "lucide-react";
+import { Search, Bell, Plus, Menu, LogOut, Sun, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -9,6 +10,18 @@ import { MobileNav } from "./mobile-nav";
 import { useApp as useAppStore } from "@/lib/store";
 import { Badge } from "@/components/ui/badge";
 import { signOut } from "next-auth/react";
+import { useTheme } from "next-themes";
+
+// Reports true only after hydration, without calling setState in an effect —
+// avoids a hydration mismatch between the server render and the client's
+// resolved theme icon.
+function useHasMounted() {
+  return useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
+}
 
 const TITLES: Record<string, { title: string; subtitle: string }> = {
   dashboard: { title: "Dashboard", subtitle: "Live campaign metrics & recent activity" },
@@ -25,6 +38,9 @@ export function Topbar() {
   const active = useApp((s) => s.active);
   const setSidebar = useAppStore((s) => s.setSidebar);
   const meta = TITLES[active] ?? { title: "CampaignGround", subtitle: "" };
+
+  const { resolvedTheme, setTheme } = useTheme();
+  const mounted = useHasMounted();
 
   return (
     <header className="h-16 border-b bg-card/60 backdrop-blur-sm flex items-center gap-3 px-4 md:px-6 sticky top-0 z-30">
@@ -68,6 +84,18 @@ export function Topbar() {
           <div className="text-xs font-medium">Maya Reyes</div>
           <div className="text-[10px] text-muted-foreground">Field Director</div>
         </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Toggle theme"
+          onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+        >
+          {mounted && resolvedTheme === "dark" ? (
+            <Sun className="size-4" />
+          ) : (
+            <Moon className="size-4" />
+          )}
+        </Button>
         <Button
           variant="ghost"
           size="icon"
