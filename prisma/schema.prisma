@@ -82,6 +82,7 @@ model Voter {
   votedIn2022     Boolean?
   votedIn2020     Boolean?
   supportLevel    String   @default("unknown") // strong-support, lean-support, undecided, lean-oppose, strong-oppose, unknown
+  supportLevelSource String @default("manual") // manual, canvass, call — which write path last set supportLevel
   volunteer        Boolean  @default(false)
   hasYardSign     Boolean  @default(false)
   hasBumperSticker Boolean @default(false)
@@ -279,12 +280,4 @@ model CallLog {
   callLengthSec Int      @default(0)
   calledAt      DateTime @default(now())
   createdAt     DateTime @default(now())
-}
-
-// ===== Outreach Metrics Snapshot (denormalized for dashboard) =====
-model Metric {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  value     Float
-  updatedAt DateTime @updatedAt
 }

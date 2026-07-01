@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
+import { requireSession } from "@/lib/api-auth";
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
@@ -33,6 +34,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
+
   const body = await req.json();
   const { voterId, householdId, volunteerId, campaignId, outcome, supportLevel, yardSign, issuePriority, notes } = body;
   if (!campaignId) return NextResponse.json({ error: "campaignId required" }, { status: 400 });
@@ -55,7 +59,7 @@ export async function POST(req: NextRequest) {
   if (voterId && supportLevel) {
     await db.voter.update({
       where: { id: voterId },
-      data: { supportLevel },
+      data: { supportLevel, supportLevelSource: "canvass" },
     });
   }
   if (voterId && yardSign) {

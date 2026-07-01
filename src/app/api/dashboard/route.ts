@@ -201,6 +201,7 @@ export async function GET() {
       candidateName: campaign.candidateName,
       officeSought: campaign.officeSought,
       district: campaign.district,
+      party: campaign.party,
       electionDate: campaign.electionDate.toISOString(),
       fundraisingGoalCents: campaign.fundraisingGoalCents,
       voteGoal: campaign.voteGoal,

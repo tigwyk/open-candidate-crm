@@ -1,13 +1,14 @@
 "use client";
 
 import { useApp } from "@/lib/store";
-import { Search, Bell, Plus, Menu } from "lucide-react";
+import { Search, Bell, Plus, Menu, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { MobileNav } from "./mobile-nav";
 import { useApp as useAppStore } from "@/lib/store";
 import { Badge } from "@/components/ui/badge";
+import { signOut } from "next-auth/react";
 
 const TITLES: Record<string, { title: string; subtitle: string }> = {
   dashboard: { title: "Dashboard", subtitle: "Live campaign metrics & recent activity" },
@@ -67,6 +68,14 @@ export function Topbar() {
           <div className="text-xs font-medium">Maya Reyes</div>
           <div className="text-[10px] text-muted-foreground">Field Director</div>
         </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Sign out"
+          onClick={() => signOut({ callbackUrl: "/login" })}
+        >
+          <LogOut className="size-4" />
+        </Button>
       </div>
     </header>
   );

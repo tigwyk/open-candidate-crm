@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
+import { requireSession } from "@/lib/api-auth";
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
@@ -34,6 +35,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
+
   const body = await req.json();
   const { id, status, priority, dueDate, title, description, assignedVolunteerId } = body;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
@@ -51,6 +55,9 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
+
   const body = await req.json();
   const { title, description, priority, dueDate, campaignId, assignedVolunteerId } = body;
   if (!title) {

@@ -82,12 +82,12 @@ export function CanvassView() {
   // Build walk lists grouped by precinct (top 5 streets to knock)
   const walkLists = (voters || [])
     .filter((v) => v.supportLevel === "undecided" || v.supportLevel === "unknown" || v.supportLevel === "lean-support")
-    .reduce((acc, v) => {
+    .reduce<Record<string, any[]>>((acc, v) => {
       const key = v.precinct?.name ?? "Unassigned";
       if (!acc[key]) acc[key] = [];
       acc[key].push(v);
       return acc;
-    }, {} as Record<string, any[]>);
+    }, {});
   const walkListEntries = Object.entries(walkLists).sort((a, b) => b[1].length - a[1].length).slice(0, 5);
 
   // Summary

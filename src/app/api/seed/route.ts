@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import type { Household, Voter } from "@prisma/client";
+import { requireSession } from "@/lib/api-auth";
 
 // GET /api/seed — idempotent: only seeds if no campaign exists
 export async function GET() {
+  const unauthorized = await requireSession();
+  if (unauthorized) return unauthorized;
+
   try {
     const existing = await db.campaign.count();
     if (existing > 0) {
@@ -52,7 +57,7 @@ async function seedAll() {
     "Elm Ct", "Willow Rd", "Sycamore Pl", "Aspen Blvd", "Walnut St",
     "Cherry St", "Spruce Ave", "Hawthorn Ln", "Magnolia Way", "Poplar Dr",
   ];
-  const households = [];
+  const households: Household[] = [];
   for (let i = 0; i < 120; i++) {
     const street = streets[i % streets.length];
     const num = 100 + i * 7;
@@ -89,7 +94,7 @@ async function seedAll() {
     return arr[arr.length - 1];
   }
 
-  const voters = [];
+  const voters: Voter[] = [];
   for (let i = 0; i < 280; i++) {
     const first = pick(firstNames);
     const last = pick(lastNames);
@@ -199,7 +204,7 @@ async function seedAll() {
   // ===== Donations =====
   const methods = ["online", "check", "cash", "in-kind"];
   const now = Date.now();
-  const donations = [];
+  const donations: ReturnType<typeof db.donation.create>[] = [];
   for (let i = 0; i < 60; i++) {
     const donor = donors[i % donors.length];
     const baseAmount = donor.capacity === "major" ? 1500_00 : donor.capacity === "mid" ? 250_00 : 50_00;

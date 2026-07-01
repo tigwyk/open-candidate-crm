@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 import { PersonAvatar } from "@/components/common/person-avatar";
 import { SupportBadge, PartyBadge } from "@/components/common/badges";
-import { SUPPORT_LEVELS, type Voter } from "@/lib/types";
+import { SUPPORT_LEVELS, SUPPORT_SOURCE_LABELS, type Voter } from "@/lib/types";
 import { formatCurrency, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -417,6 +417,11 @@ function VoterDetailForm({
               </button>
             ))}
           </div>
+          {voter.supportLevelSource && (
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Last set via {SUPPORT_SOURCE_LABELS[voter.supportLevelSource] ?? voter.supportLevelSource}
+            </p>
+          )}
         </div>
 
         {/* Toggles */}
