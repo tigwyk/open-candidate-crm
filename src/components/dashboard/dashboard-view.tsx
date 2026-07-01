@@ -56,6 +56,7 @@ export function DashboardView() {
       return r.json();
     },
     staleTime: 30_000,
+    refetchInterval: 20_000,
   });
 
   if (isLoading) return <DashboardSkeleton />;

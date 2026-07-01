@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import { PersonAvatar } from "@/components/common/person-avatar";
 import { SupportBadge } from "@/components/common/badges";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -72,6 +72,7 @@ export function PhoneBankView() {
   const [outcomeFilter, setOutcomeFilter] = useState("all");
   const [logOpen, setLogOpen] = useState(false);
   const [queueIdx, setQueueIdx] = useState(0);
+  const [activeVolunteerId, setActiveVolunteerId] = useState("");
 
   const params = new URLSearchParams();
   if (outcomeFilter !== "all") params.set("outcome", outcomeFilter);
@@ -79,12 +80,14 @@ export function PhoneBankView() {
   const { data: logsData, isLoading } = useQuery({
     queryKey: ["call-logs", params.toString()],
     queryFn: async () => (await fetch(`/api/calls?${params}`)).json(),
+    refetchInterval: 10_000,
   });
   const logs: any[] = logsData?.items ?? [];
 
   const { data: votersData } = useQuery({
     queryKey: ["phonebank-voters"],
     queryFn: async () => (await fetch(`/api/voters?limit=200`)).json(),
+    refetchInterval: 10_000,
   });
   const voters: any[] = votersData?.items ?? [];
 
@@ -94,12 +97,54 @@ export function PhoneBankView() {
   });
   const volunteers: any[] = volunteersData?.items ?? [];
 
-  // Build call queue: prioritize undecided + low-contact voters
+  const { data: claimsData } = useQuery({
+    queryKey: ["claims", "call"],
+    queryFn: async () => (await fetch("/api/claims?channel=call")).json(),
+    refetchInterval: 8_000,
+  });
+  const claims: any[] = claimsData?.items ?? [];
+  const claimedByOthers = new Map(
+    claims
+      .filter((c: any) => c.volunteerId !== activeVolunteerId)
+      .map((c: any) => [c.voterId, c.volunteerName])
+  );
+
+  // Build call queue: prioritize undecided + low-contact voters, excluding
+  // voters actively being called by someone else
   const callQueue = (voters || [])
     .filter((v) => v.phone && (v.supportLevel === "undecided" || v.supportLevel === "lean-support" || v.supportLevel === "unknown"))
+    .filter((v) => !claimedByOthers.has(v.id))
     .slice(0, 20);
 
   const currentVoter = callQueue[queueIdx];
+
+  // Claim the current voter while it's active; release it when it changes
+  // or this view unmounts, so other phone-bankers don't duplicate the call.
+  useEffect(() => {
+    if (!currentVoter || !activeVolunteerId) return;
+    let cancelled = false;
+    fetch("/api/claims", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ voterId: currentVoter.id, channel: "call", volunteerId: activeVolunteerId }),
+    }).then(async (r) => {
+      if (cancelled) return;
+      qc.invalidateQueries({ queryKey: ["claims", "call"] });
+      if (r.status === 409) {
+        const body = await r.json();
+        toast({ title: `Already claimed by ${body.claimedBy}, skipping`, duration: 2000 });
+        setQueueIdx((i) => Math.min(callQueue.length - 1, i + 1));
+      }
+    });
+    return () => {
+      cancelled = true;
+      fetch("/api/claims", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ voterId: currentVoter.id, channel: "call", volunteerId: activeVolunteerId }),
+      }).then(() => qc.invalidateQueries({ queryKey: ["claims", "call"] }));
+    };
+  }, [currentVoter?.id, activeVolunteerId]);
 
   // Summary
   const total = logs.length;
@@ -112,6 +157,21 @@ export function PhoneBankView() {
 
   return (
     <div className="p-4 md:p-6 space-y-4">
+      {/* Who's calling */}
+      <div className="flex items-center gap-2">
+        <Label className="text-xs whitespace-nowrap">Calling as</Label>
+        <Select value={activeVolunteerId} onValueChange={setActiveVolunteerId}>
+          <SelectTrigger className="h-8 w-[220px] text-xs">
+            <SelectValue placeholder="Select yourself…" />
+          </SelectTrigger>
+          <SelectContent>
+            {volunteers.map((v) => (
+              <SelectItem key={v.id} value={v.id}>{v.firstName} {v.lastName}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <SummaryCard icon={PhoneCall} label="Calls made" value={total} sub={`${contacted} connected`} accent="cyan" />
@@ -131,7 +191,12 @@ export function PhoneBankView() {
             <CardDescription className="text-xs">Next voter to dial</CardDescription>
           </CardHeader>
           <CardContent>
-            {currentVoter ? (
+            {!activeVolunteerId ? (
+              <div className="py-12 text-center text-sm text-muted-foreground">
+                <PhoneCall className="size-8 mx-auto mb-2 opacity-50" />
+                Select who's calling to start the queue
+              </div>
+            ) : currentVoter ? (
               <div>
                 <div className="rounded-lg border bg-gradient-to-br from-primary/5 to-transparent p-4">
                   <div className="flex items-center gap-3 mb-3">
@@ -269,6 +334,7 @@ export function PhoneBankView() {
         voters={currentVoter ? [currentVoter, ...voters] : voters}
         volunteers={volunteers}
         defaultVoterId={currentVoter?.id}
+        volunteerId={activeVolunteerId}
         onSaved={() => {
           qc.invalidateQueries({ queryKey: ["call-logs"] });
           qc.invalidateQueries({ queryKey: ["phonebank-voters"] });
@@ -306,15 +372,15 @@ function SummaryCard({ icon: Icon, label, value, sub, accent }: {
   );
 }
 
-function LogCallDialog({ open, onOpenChange, voters, volunteers, defaultVoterId, onSaved }: {
+function LogCallDialog({ open, onOpenChange, voters, volunteers, defaultVoterId, volunteerId, onSaved }: {
   open: boolean; onOpenChange: (o: boolean) => void;
   voters: any[]; volunteers: any[];
   defaultVoterId?: string;
+  volunteerId?: string;
   onSaved: () => void;
 }) {
   const { toast } = useToast();
   const [voterId, setVoterId] = useState(defaultVoterId ?? "");
-  const [volunteerId, setVolunteerId] = useState("");
   const [outcome, setOutcome] = useState("contacted");
   const [support, setSupport] = useState("");
   const [issue, setIssue] = useState("");
@@ -347,13 +413,15 @@ function LogCallDialog({ open, onOpenChange, voters, volunteers, defaultVoterId,
     });
     setSaving(false);
     if (r.ok) {
-      setVoterId(""); setVolunteerId(""); setOutcome("contacted");
+      setVoterId(""); setOutcome("contacted");
       setSupport(""); setIssue(""); setCallLength(""); setNotes("");
       onSaved();
     } else {
       toast({ title: "Failed to log", variant: "destructive" });
     }
   }
+
+  const activeVolunteer = volunteers.find((v) => v.id === volunteerId);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -378,15 +446,10 @@ function LogCallDialog({ open, onOpenChange, voters, volunteers, defaultVoterId,
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs">Volunteer</Label>
-              <Select value={volunteerId} onValueChange={setVolunteerId}>
-                <SelectTrigger className="mt-1"><SelectValue placeholder="Optional" /></SelectTrigger>
-                <SelectContent>
-                  {volunteers.map((v) => (
-                    <SelectItem key={v.id} value={v.id}>{v.firstName} {v.lastName}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-xs">Logging as</Label>
+              <div className="mt-1 h-9 flex items-center px-3 rounded-md border bg-muted/30 text-sm text-muted-foreground">
+                {activeVolunteer ? `${activeVolunteer.firstName} ${activeVolunteer.lastName}` : "—"}
+              </div>
             </div>
             <div>
               <Label className="text-xs">Outcome</Label>
@@ -407,7 +470,6 @@ function LogCallDialog({ open, onOpenChange, voters, volunteers, defaultVoterId,
                 <Select value={support} onValueChange={setSupport}>
                   <SelectTrigger className="mt-1"><SelectValue placeholder="None" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
                     {SUPPORT_LEVELS.map((s) => (
                       <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                     ))}
@@ -420,8 +482,7 @@ function LogCallDialog({ open, onOpenChange, voters, volunteers, defaultVoterId,
                   <Select value={issue} onValueChange={setIssue}>
                     <SelectTrigger className="mt-1"><SelectValue placeholder="None" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
-                      {ISSUES.map((i) => (
+                        {ISSUES.map((i) => (
                         <SelectItem key={i} value={i}>{i}</SelectItem>
                       ))}
                     </SelectContent>

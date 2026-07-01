@@ -106,6 +106,7 @@ model Voter {
   eventAttendees  EventAttendee[]
   assignedTasks   Task[]
   donor           Donor?
+  contactClaims   ContactClaim[]
 }
 
 // ===== Volunteer =====
@@ -132,6 +133,7 @@ model Volunteer {
   eventAttendees EventAttendee[]
   callLogs    CallLog[]
   canvassLogs CanvassLog[]
+  contactClaims ContactClaim[]
 }
 
 // ===== Donor =====
@@ -280,4 +282,17 @@ model CallLog {
   callLengthSec Int      @default(0)
   calledAt      DateTime @default(now())
   createdAt     DateTime @default(now())
+}
+
+// ===== ContactClaim (in-progress lock so volunteers don't duplicate work) =====
+model ContactClaim {
+  id          String   @id @default(cuid())
+  voterId     String
+  voter       Voter    @relation(fields: [voterId], references: [id])
+  channel     String   // "call" | "canvass"
+  volunteerId String
+  volunteer   Volunteer @relation(fields: [volunteerId], references: [id])
+  claimedAt   DateTime @default(now())
+
+  @@unique([voterId, channel])
 }
