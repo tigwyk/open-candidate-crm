@@ -52,23 +52,21 @@ jobs:
         run: bun test
 
       - name: Extract changelog section for this tag
-        id: changelog
         run: |
           version="${GITHUB_REF_NAME#v}"
-          notes=$(awk -v ver="$version" '
+          awk -v ver="$version" '
             $0 ~ "^## \\[" ver "\\]" { found=1; next }
             found && /^## \[/ { exit }
             found { print }
-          ' CHANGELOG.md)
-          if [ -z "$notes" ]; then
-            notes="_No CHANGELOG.md entry found for $version — see commit history._"
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "_No CHANGELOG.md entry found for $version — see commit history._" > release-notes.md
           fi
-          {
-            echo "notes<<CHANGELOG_EOF"
-            echo "$notes"
-            echo "CHANGELOG_EOF"
-          } >> "$GITHUB_OUTPUT"
 
+      # Notes are written to a file and passed via --notes-file rather than
+      # interpolated into this run: script — a CHANGELOG entry containing
+      # backticks (e.g. `bun test`) would otherwise be re-parsed by the shell
+      # as command substitution if embedded directly via ${{ }}.
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -80,5 +78,5 @@ jobs:
           fi
           gh release create "$tag" \
             --title "$tag" \
-            --notes "${{ steps.changelog.outputs.notes }}" \
+            --notes-file release-notes.md \
             $prerelease_flag
