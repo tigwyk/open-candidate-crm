@@ -1,15 +1,23 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { fetchAs, login, signupAndLogin, uniqueEmail, type TestAccount } from "../helpers/client";
-import { TEST_BASE_URL } from "../setup";
+import { TEST_BASE_URL, TEST_DATABASE_URL } from "../setup";
 import { testDb } from "../helpers/testDb";
+import { resetTestDatabase } from "../helpers/reset";
 
-// Filename is prefixed "00-" so it sorts (and therefore runs) before every
-// other test file — bun test discovers/executes files in sorted path order,
-// and the platform-owner auto-assignment test below depends on being the
-// very first signup against the freshly reset test database (see
-// src/app/api/signup/route.ts: isFirstUser = user.count() === 0).
+// bun test's file discovery order isn't guaranteed alphabetical across
+// platforms (confirmed: matched filename sort locally on Windows, didn't in
+// CI on Linux) — so the platform-owner auto-assignment test below can't rely
+// on being the very first file to run. Instead it truncates the test
+// database itself immediately before signing up, guaranteeing it really is
+// the first-ever user regardless of what other test files already did.
+// Safe because bun runs test files sequentially, not interleaved (confirmed
+// by grouped-by-file CI output) — nothing else is touching the DB mid-reset.
 
 describe("platform owner auto-assignment", () => {
+  beforeAll(async () => {
+    await resetTestDatabase(TEST_DATABASE_URL);
+  });
+
   test("the first user in the deployment is auto-assigned platform owner", async () => {
     const first = await signupAndLogin();
     const res = await fetchAs(first.cookie, "/api/platform/users");
