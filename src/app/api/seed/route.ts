@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import type { Household, Voter } from "@prisma/client";
 import { requireUser } from "@/lib/api-auth";
+import { seedOverridesSchema } from "@/lib/validation/seed";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
@@ -9,7 +12,14 @@ import crypto from "crypto";
 // owner user, and the membership linking them, but only if no User exists yet
 // (i.e. a genuinely fresh install with nobody able to log in). No auth
 // required here, since there's nobody to authenticate as before this runs.
+// Rate-limited by IP (rather than through requireUser, which doesn't apply
+// pre-login) since it's otherwise a cheap, unauthenticated DoS vector.
 export async function GET() {
+  const ip = getClientIp(await headers());
+  if (!checkRateLimit(`seed-get:${ip}`, { max: 10, windowMs: 60_000 })) {
+    return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429 });
+  }
+
   try {
     const existingUsers = await db.user.count();
     if (existingUsers > 0) {
@@ -56,8 +66,12 @@ export async function POST(req: NextRequest) {
   if ("error" in access) return access.error;
 
   try {
-    const body = await req.json().catch(() => ({}));
-    const campaign = await seedAll(body);
+    const rawBody = await req.json().catch(() => ({}));
+    const parsed = seedOverridesSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return NextResponse.json({ ok: false, error: "Invalid request body" }, { status: 400 });
+    }
+    const campaign = await seedAll(parsed.data);
     await db.campaignMembership.create({
       data: { userId: access.userId, campaignId: campaign.id, role: "owner" },
     });

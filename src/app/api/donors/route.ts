@@ -17,10 +17,10 @@ export async function GET(req: NextRequest) {
   if (type) where.type = type;
   if (q) {
     where.OR = [
-      { firstName: { contains: q } },
-      { lastName: { contains: q } },
-      { email: { contains: q } },
-      { employer: { contains: q } },
+      { firstName: { contains: q, mode: "insensitive" } },
+      { lastName: { contains: q, mode: "insensitive" } },
+      { email: { contains: q, mode: "insensitive" } },
+      { employer: { contains: q, mode: "insensitive" } },
     ];
   }
 

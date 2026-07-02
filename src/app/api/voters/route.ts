@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import { requireCampaignAccess } from "@/lib/api-auth";
+import { parseBody, parseQuery } from "@/lib/api-validate";
+import { paginationSchema } from "@/lib/validation/shared";
+import { voterPatchSchema } from "@/lib/validation/voter";
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
@@ -10,8 +13,9 @@ export async function GET(req: NextRequest) {
   const party = sp.get("party"); // comma separated
   const precinctId = sp.get("precinctId");
   const contactedOnly = sp.get("contacted") === "1";
-  const limit = Math.min(200, parseInt(sp.get("limit") ?? "100"));
-  const offset = parseInt(sp.get("offset") ?? "0");
+  const pagination = parseQuery(sp, paginationSchema);
+  if ("error" in pagination) return pagination.error;
+  const { limit, offset } = pagination.data;
   const campaignId = sp.get("campaignId");
   const access = await requireCampaignAccess(campaignId);
   if ("error" in access) return access.error;
@@ -19,12 +23,12 @@ export async function GET(req: NextRequest) {
   const where: Prisma.VoterWhereInput = { campaignId: access.campaignId };
   if (q) {
     where.OR = [
-      { firstName: { contains: q } },
-      { lastName: { contains: q } },
-      { email: { contains: q } },
-      { phone: { contains: q } },
-      { registeredAddress: { contains: q } },
-      { notes: { contains: q } },
+      { firstName: { contains: q, mode: "insensitive" } },
+      { lastName: { contains: q, mode: "insensitive" } },
+      { email: { contains: q, mode: "insensitive" } },
+      { phone: { contains: q, mode: "insensitive" } },
+      { registeredAddress: { contains: q, mode: "insensitive" } },
+      { notes: { contains: q, mode: "insensitive" } },
     ];
   }
   if (support) {
@@ -69,9 +73,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const body = await req.json();
-  const { id, supportLevel, notes, volunteer, hasYardSign, hasBumperSticker, tags } = body;
-  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  const parsed = await parseBody(req, voterPatchSchema);
+  if ("error" in parsed) return parsed.error;
+  const { id, supportLevel, notes, volunteer, hasYardSign, hasBumperSticker, tags } = parsed.data;
 
   const voter = await db.voter.findUnique({ where: { id }, select: { campaignId: true } });
   if (!voter) return NextResponse.json({ error: "not found" }, { status: 404 });

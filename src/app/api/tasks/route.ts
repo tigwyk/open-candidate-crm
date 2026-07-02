@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import { requireCampaignAccess } from "@/lib/api-auth";
+import { parseBody } from "@/lib/api-validate";
+import { taskCreateSchema, taskPatchSchema } from "@/lib/validation/task";
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
@@ -38,9 +40,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const body = await req.json();
-  const { id, status, priority, dueDate, title, description, assignedVolunteerId } = body;
-  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  const parsed = await parseBody(req, taskPatchSchema);
+  if ("error" in parsed) return parsed.error;
+  const { id, status, priority, dueDate, title, description, assignedVolunteerId } = parsed.data;
 
   const task = await db.task.findUnique({ where: { id }, select: { campaignId: true } });
   if (!task) return NextResponse.json({ error: "not found" }, { status: 404 });
@@ -61,11 +63,9 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const { title, description, priority, dueDate, campaignId, assignedVolunteerId } = body;
-  if (!title) {
-    return NextResponse.json({ error: "missing fields" }, { status: 400 });
-  }
+  const parsed = await parseBody(req, taskCreateSchema);
+  if ("error" in parsed) return parsed.error;
+  const { title, description, priority, dueDate, campaignId, assignedVolunteerId } = parsed.data;
   const access = await requireCampaignAccess(campaignId);
   if ("error" in access) return access.error;
 

@@ -7,6 +7,22 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci"
     steps:
       - uses: actions/checkout@v4
 
@@ -23,7 +39,8 @@ jobs:
       - name: Generate Prisma client
         run: bun run db:generate
 
+      - name: Apply migrations
+        run: bun run db:migrate:deploy
+
       - name: Build
         run: bun run build
-        env:
-          DATABASE_URL: "file:./ci.db"

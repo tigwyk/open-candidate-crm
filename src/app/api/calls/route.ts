@@ -2,11 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import { requireCampaignAccess } from "@/lib/api-auth";
+import { parseBody, parseQuery } from "@/lib/api-validate";
+import { paginationSchema } from "@/lib/validation/shared";
+import { callCreateSchema } from "@/lib/validation/call";
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const outcome = sp.get("outcome");
-  const limit = Math.min(200, parseInt(sp.get("limit") ?? "100"));
+  const pagination = parseQuery(sp, paginationSchema);
+  if ("error" in pagination) return pagination.error;
+  const { limit } = pagination.data;
   const campaignId = sp.get("campaignId");
   const access = await requireCampaignAccess(campaignId);
   if ("error" in access) return access.error;
@@ -34,8 +39,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const { voterId, volunteerId, campaignId, outcome, supportLevel, issuePriority, notes, callLengthSec } = body;
+  const parsed = await parseBody(req, callCreateSchema);
+  if ("error" in parsed) return parsed.error;
+  const { voterId, volunteerId, campaignId, outcome, supportLevel, issuePriority, notes, callLengthSec } = parsed.data;
   const access = await requireCampaignAccess(campaignId);
   if ("error" in access) return access.error;
 

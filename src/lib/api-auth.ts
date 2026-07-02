@@ -1,7 +1,12 @@
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
+
+const TOO_MANY_REQUESTS = () =>
+  NextResponse.json({ error: "Too many requests" }, { status: 429 });
 
 export async function requireSession() {
   const session = await getServerSession(authOptions);
@@ -15,9 +20,20 @@ type UserResult = { error: NextResponse } | { userId: string };
 
 export async function requireUser(): Promise<UserResult> {
   const session = await getServerSession(authOptions);
+
   if (!session?.user?.id) {
+    // Pre-auth requests are rate-limited by IP, since there's no user identity yet.
+    const ip = getClientIp(await headers());
+    if (!checkRateLimit(`ip:${ip}`, { max: 60, windowMs: 60_000 })) {
+      return { error: TOO_MANY_REQUESTS() };
+    }
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
+
+  if (!checkRateLimit(`user:${session.user.id}`, { max: 240, windowMs: 60_000 })) {
+    return { error: TOO_MANY_REQUESTS() };
+  }
+
   return { userId: session.user.id };
 }
 

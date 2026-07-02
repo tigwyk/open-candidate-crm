@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireCampaignAccess } from "@/lib/api-auth";
+import { parseBody } from "@/lib/api-validate";
+import { claimBodySchema } from "@/lib/validation/claim";
 
 const CLAIM_TTL_MS = 5 * 60 * 1000;
 
@@ -37,11 +39,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const { voterId, channel, volunteerId } = body;
-  if (!voterId || !channel || !volunteerId) {
-    return NextResponse.json({ error: "voterId, channel, volunteerId required" }, { status: 400 });
-  }
+  const parsed = await parseBody(req, claimBodySchema);
+  if ("error" in parsed) return parsed.error;
+  const { voterId, channel, volunteerId } = parsed.data;
 
   const voter = await db.voter.findUnique({ where: { id: voterId }, select: { campaignId: true } });
   if (!voter) return NextResponse.json({ error: "voter not found" }, { status: 404 });
@@ -75,11 +75,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const body = await req.json();
-  const { voterId, channel, volunteerId } = body;
-  if (!voterId || !channel || !volunteerId) {
-    return NextResponse.json({ error: "voterId, channel, volunteerId required" }, { status: 400 });
-  }
+  const parsed = await parseBody(req, claimBodySchema);
+  if ("error" in parsed) return parsed.error;
+  const { voterId, channel, volunteerId } = parsed.data;
 
   const existing = await db.contactClaim.findUnique({
     where: { voterId_channel: { voterId, channel } },

@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -35,6 +35,7 @@ model Campaign {
   precincts    Precinct[]
   contactClaims ContactClaim[]
   memberships  CampaignMembership[]
+  invites      Invite[]
 }
 
 // ===== User / Membership (multi-campaign access) =====
@@ -47,6 +48,7 @@ model User {
   updatedAt    DateTime @updatedAt
 
   memberships  CampaignMembership[]
+  sentInvites  Invite[]
 }
 
 model CampaignMembership {
@@ -61,6 +63,31 @@ model CampaignMembership {
   campaign   Campaign @relation(fields: [campaignId], references: [id])
 
   @@unique([userId, campaignId])
+}
+
+// ===== Invite (team-member invites to an existing campaign) =====
+model Invite {
+  id                String    @id @default(cuid())
+  email             String
+  token             String    @unique
+  status            String    @default("pending") // "pending" | "accepted" | "revoked" | "expired" | "bounced"
+  expiresAt         DateTime
+  createdAt         DateTime  @default(now())
+  acceptedAt        DateTime?
+
+  postmarkMessageId String?
+  postmarkBounceId  Int?
+  bounceType        String?
+  bouncedAt         DateTime?
+
+  campaignId  String
+  campaign    Campaign  @relation(fields: [campaignId], references: [id])
+
+  invitedById String
+  invitedBy   User      @relation(fields: [invitedById], references: [id])
+
+  @@unique([campaignId, email])
+  @@index([status])
 }
 
 // ===== Precinct / District =====
