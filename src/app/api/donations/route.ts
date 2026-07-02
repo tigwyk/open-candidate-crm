@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
-import { requireCampaignAccess } from "@/lib/api-auth";
+import { requireCampaignAccess, assertBelongsToCampaign } from "@/lib/api-auth";
 import { parseBody } from "@/lib/api-validate";
 import { donationCreateSchema } from "@/lib/validation/donation";
 
@@ -45,11 +45,8 @@ export async function POST(req: NextRequest) {
   const access = await requireCampaignAccess(campaignId, { role: "owner" });
   if ("error" in access) return access.error;
 
-  const donor = await db.donor.findFirst({
-    where: { id: donorId, campaignId: access.campaignId },
-    select: { id: true },
-  });
-  if (!donor) return NextResponse.json({ error: "Invalid donor" }, { status: 400 });
+  const donorErr = await assertBelongsToCampaign(db.donor, donorId, access.campaignId, "donor");
+  if (donorErr) return donorErr;
 
   const donation = await db.donation.create({
     data: {

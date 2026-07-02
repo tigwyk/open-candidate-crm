@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
-import { requireCampaignAccess } from "@/lib/api-auth";
+import { requireCampaignAccess, assertBelongsToCampaign } from "@/lib/api-auth";
 import { parseBody, parseQuery } from "@/lib/api-validate";
 import { paginationSchema } from "@/lib/validation/shared";
 import { canvassCreateSchema } from "@/lib/validation/canvass";
@@ -48,14 +48,14 @@ export async function POST(req: NextRequest) {
   const access = await requireCampaignAccess(campaignId);
   if ("error" in access) return access.error;
 
-  const [voter, household, volunteer] = await Promise.all([
-    voterId ? db.voter.findFirst({ where: { id: voterId, campaignId: access.campaignId }, select: { id: true } }) : null,
-    householdId ? db.household.findFirst({ where: { id: householdId, campaignId: access.campaignId }, select: { id: true } }) : null,
-    volunteerId ? db.volunteer.findFirst({ where: { id: volunteerId, campaignId: access.campaignId }, select: { id: true } }) : null,
+  const [voterErr, householdErr, volunteerErr] = await Promise.all([
+    assertBelongsToCampaign(db.voter, voterId, access.campaignId, "voter"),
+    assertBelongsToCampaign(db.household, householdId, access.campaignId, "household"),
+    assertBelongsToCampaign(db.volunteer, volunteerId, access.campaignId, "volunteer"),
   ]);
-  if (voterId && !voter) return NextResponse.json({ error: "Invalid voter" }, { status: 400 });
-  if (householdId && !household) return NextResponse.json({ error: "Invalid household" }, { status: 400 });
-  if (volunteerId && !volunteer) return NextResponse.json({ error: "Invalid volunteer" }, { status: 400 });
+  if (voterErr) return voterErr;
+  if (householdErr) return householdErr;
+  if (volunteerErr) return volunteerErr;
 
   const log = await db.canvassLog.create({
     data: {

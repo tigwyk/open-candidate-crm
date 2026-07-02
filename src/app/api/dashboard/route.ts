@@ -115,7 +115,7 @@ export async function GET(req: NextRequest) {
       include: {
         voters: {
           where: { campaignId: campaign.id },
-          select: { supportLevel: true, id: true, callLogs: { where: { outcome: "contacted" }, select: { id: true } }, canvassLogs: { where: { outcome: "canvassed" }, select: { id: true } } },
+          select: { supportLevel: true, id: true },
         },
       },
     }),
@@ -145,7 +145,8 @@ export async function GET(req: NextRequest) {
   });
 
   const raisedCents = raisedAgg._sum.amountCents ?? 0;
-  const votersContacted = new Set(votersContactedRaw.map((v) => v.id)).size;
+  const votersContactedIds = new Set(votersContactedRaw.map((v) => v.id));
+  const votersContacted = votersContactedIds.size;
 
   // Recent activity feed
   const recentActivity: DashboardMetrics["recentActivity"] = [];
@@ -195,7 +196,7 @@ export async function GET(req: NextRequest) {
   const precincts = precinctRows.map((p) => {
     const total = p.voters.length;
     const supporters = p.voters.filter((v) => v.supportLevel === "strong-support" || v.supportLevel === "lean-support").length;
-    const contacted = p.voters.filter((v) => v.callLogs.length > 0 || v.canvassLogs.length > 0).length;
+    const contacted = p.voters.filter((v) => votersContactedIds.has(v.id)).length;
     return { name: p.name, supporters, contacted, total };
   });
 

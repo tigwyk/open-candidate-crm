@@ -320,6 +320,7 @@ export function PhoneBankView() {
       </div>
 
       <LogCallDialog
+        key={currentVoter?.id ?? "manual"}
         open={logOpen}
         onOpenChange={setLogOpen}
         voters={currentVoter ? [currentVoter, ...voters] : voters}
@@ -354,11 +355,6 @@ function LogCallDialog({ open, onOpenChange, voters, volunteers, defaultVoterId,
   const [issue, setIssue] = useState("");
   const [callLength, setCallLength] = useState("");
   const [notes, setNotes] = useState("");
-
-  // Reset when dialog opens
-  useState(() => {
-    if (defaultVoterId) setVoterId(defaultVoterId);
-  });
 
   async function save() {
     if (!voterId) { toast({ title: "Select a voter", variant: "destructive" }); return; }

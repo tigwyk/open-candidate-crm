@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
-import { requireCampaignAccess } from "@/lib/api-auth";
+import { requireCampaignAccess, assertBelongsToCampaign } from "@/lib/api-auth";
 import { parseBody, parseQuery } from "@/lib/api-validate";
 import { paginationSchema } from "@/lib/validation/shared";
 import { callCreateSchema } from "@/lib/validation/call";
@@ -45,12 +45,12 @@ export async function POST(req: NextRequest) {
   const access = await requireCampaignAccess(campaignId);
   if ("error" in access) return access.error;
 
-  const [voter, volunteer] = await Promise.all([
-    voterId ? db.voter.findFirst({ where: { id: voterId, campaignId: access.campaignId }, select: { id: true } }) : null,
-    volunteerId ? db.volunteer.findFirst({ where: { id: volunteerId, campaignId: access.campaignId }, select: { id: true } }) : null,
+  const [voterErr, volunteerErr] = await Promise.all([
+    assertBelongsToCampaign(db.voter, voterId, access.campaignId, "voter"),
+    assertBelongsToCampaign(db.volunteer, volunteerId, access.campaignId, "volunteer"),
   ]);
-  if (voterId && !voter) return NextResponse.json({ error: "Invalid voter" }, { status: 400 });
-  if (volunteerId && !volunteer) return NextResponse.json({ error: "Invalid volunteer" }, { status: 400 });
+  if (voterErr) return voterErr;
+  if (volunteerErr) return volunteerErr;
 
   const log = await db.callLog.create({
     data: {
