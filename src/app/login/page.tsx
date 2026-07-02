@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,12 +11,23 @@ import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +49,7 @@ export default function LoginPage() {
       setError("Invalid email or password");
       return;
     }
-    router.push("/");
+    router.push(next && next.startsWith("/") ? next : "/");
     router.refresh();
   }
 
@@ -78,6 +90,14 @@ export default function LoginPage() {
             </Button>
           </form>
         </CardContent>
+        <CardFooter>
+          <p className="text-sm text-muted-foreground">
+            New here?{" "}
+            <Link href="/signup" className="text-primary underline underline-offset-2">
+              Start a campaign
+            </Link>
+          </p>
+        </CardFooter>
       </Card>
     </div>
   );

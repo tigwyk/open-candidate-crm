@@ -1,17 +1,30 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useApp } from "@/lib/store";
-import { Search, Bell, Plus, Menu, LogOut, Sun, Moon, ChevronsUpDown } from "lucide-react";
+import { Search, Bell, Plus, Menu, LogOut, Sun, Moon, ChevronsUpDown, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { MobileNav } from "./mobile-nav";
 import { useApp as useAppStore } from "@/lib/store";
 import { Badge } from "@/components/ui/badge";
 import { signOut, useSession } from "next-auth/react";
 import { useTheme } from "next-themes";
-import { useMemberships } from "@/lib/memberships";
+import { useCurrentRole, useMemberships } from "@/lib/memberships";
+import { useInvites } from "@/lib/invites";
+import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -63,6 +76,8 @@ export function Topbar() {
   const currentCampaignId = useApp((s) => s.currentCampaignId);
   const setCampaign = useApp((s) => s.setCampaign);
   const currentMembership = memberships.find((m) => m.campaignId === currentCampaignId);
+  const currentRole = useCurrentRole();
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const displayName = session?.user?.name ?? session?.user?.email ?? "—";
 
@@ -119,6 +134,14 @@ export function Topbar() {
         </DropdownMenu>
       )}
 
+      {currentRole === "owner" && currentCampaignId && (
+        <InviteTeammateDialog
+          open={inviteOpen}
+          onOpenChange={setInviteOpen}
+          campaignId={currentCampaignId}
+        />
+      )}
+
       <div className="hidden sm:flex items-center gap-2 pl-2 border-l">
         <Avatar className="size-8">
           <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
@@ -151,5 +174,122 @@ export function Topbar() {
         </Button>
       </div>
     </header>
+  );
+}
+
+function InviteTeammateDialog({
+  open,
+  onOpenChange,
+  campaignId,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  campaignId: string;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data: invitesData } = useInvites(campaignId);
+  const invites = invitesData?.items ?? [];
+  const [email, setEmail] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+
+  function refetchInvites() {
+    queryClient.invalidateQueries({ queryKey: ["invites", campaignId] });
+  }
+
+  async function save() {
+    if (!email) {
+      toast({ title: "Email required", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    const r = await fetch("/api/invites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ campaignId, email }),
+    });
+    setSaving(false);
+    if (r.ok) {
+      setEmail("");
+      toast({ title: "Invite sent" });
+      refetchInvites();
+    } else {
+      const body = await r.json().catch(() => ({}));
+      toast({ title: body?.error ?? "Failed to send invite", variant: "destructive" });
+    }
+  }
+
+  async function revoke(id: string) {
+    setRevokingId(id);
+    const r = await fetch(`/api/invites/${id}`, { method: "DELETE" });
+    setRevokingId(null);
+    if (r.ok) {
+      refetchInvites();
+    } else {
+      toast({ title: "Failed to revoke invite", variant: "destructive" });
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="icon" className="h-8 w-8" aria-label="Invite teammate">
+          <UserPlus className="size-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Invite a teammate</DialogTitle>
+          <DialogDescription>
+            They'll get an email with a link to join this campaign as a member.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs">Email</Label>
+            <Input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="teammate@example.com"
+              type="email"
+              className="mt-1"
+            />
+          </div>
+        </div>
+        {invites.length > 0 && (
+          <div className="space-y-1.5 border-t pt-3">
+            <p className="text-xs font-medium text-muted-foreground">Pending invites</p>
+            <div className="space-y-1.5 max-h-40 overflow-y-auto">
+              {invites.map((inv) => (
+                <div key={inv.id} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="truncate flex-1">{inv.email}</span>
+                  <Badge variant={inv.status === "bounced" ? "destructive" : "outline"}>
+                    {inv.status}
+                  </Badge>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    disabled={revokingId === inv.id}
+                    onClick={() => revoke(inv.id)}
+                  >
+                    Revoke
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={save} disabled={saving}>
+            Send invite
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
