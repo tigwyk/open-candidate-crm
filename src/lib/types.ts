@@ -25,6 +25,7 @@ export interface Voter {
   votedIn2022?: boolean | null;
   votedIn2020?: boolean | null;
   supportLevel: SupportLevel;
+  supportLevelSource?: string;
   volunteer?: boolean;
   hasYardSign?: boolean;
   hasBumperSticker?: boolean;
@@ -177,6 +178,7 @@ export interface DashboardMetrics {
     candidateName: string;
     officeSought: string;
     district: string;
+    party?: string | null;
     electionDate: string;
     fundraisingGoalCents: number;
     voteGoal: number;
@@ -224,6 +226,12 @@ export const SUPPORT_LEVELS: { value: SupportLevel; label: string; color: string
   { value: "strong-oppose", label: "Strong Oppose", color: "red" },
   { value: "unknown", label: "Unknown", color: "slate" },
 ];
+
+export const SUPPORT_SOURCE_LABELS: Record<string, string> = {
+  manual: "manual edit",
+  canvass: "canvass",
+  call: "phone call",
+};
 
 export const PARTY_COLORS: Record<string, string> = {
   Dem: "sky",

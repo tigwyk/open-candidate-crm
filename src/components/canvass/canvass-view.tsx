@@ -41,6 +41,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { SUPPORT_LEVELS } from "@/lib/types";
+import { useApp } from "@/lib/store";
 
 const OUTCOME_INFO: Record<string, { label: string; color: string; icon: any }> = {
   canvassed: { label: "Canvassed", color: "text-emerald-700 bg-emerald-500/10 dark:text-emerald-300", icon: CheckCircle2 },
@@ -57,37 +58,90 @@ export function CanvassView() {
   const { toast } = useToast();
   const [outcomeFilter, setOutcomeFilter] = useState("all");
   const [logOpen, setLogOpen] = useState(false);
+  const [activeVolunteerId, setActiveVolunteerId] = useState("");
+  const [claimedVoterId, setClaimedVoterId] = useState<string | null>(null);
+  const campaignId = useApp((s) => s.currentCampaignId);
 
   const params = new URLSearchParams();
+  if (campaignId) params.set("campaignId", campaignId);
   if (outcomeFilter !== "all") params.set("outcome", outcomeFilter);
 
   const { data: logsData, isLoading } = useQuery({
     queryKey: ["canvass-logs", params.toString()],
     queryFn: async () => (await fetch(`/api/canvass?${params}`)).json(),
+    enabled: !!campaignId,
+    refetchInterval: 10_000,
   });
   const logs: any[] = logsData?.items ?? [];
 
   const { data: votersData } = useQuery({
-    queryKey: ["canvass-voters"],
-    queryFn: async () => (await fetch(`/api/voters?limit=200`)).json(),
+    queryKey: ["canvass-voters", campaignId],
+    queryFn: async () => (await fetch(`/api/voters?limit=200&campaignId=${campaignId}`)).json(),
+    enabled: !!campaignId,
+    refetchInterval: 10_000,
   });
   const voters: any[] = votersData?.items ?? [];
 
   const { data: volunteersData } = useQuery({
-    queryKey: ["canvass-volunteers"],
-    queryFn: async () => (await fetch("/api/volunteers")).json(),
+    queryKey: ["canvass-volunteers", campaignId],
+    queryFn: async () => (await fetch(`/api/volunteers?campaignId=${campaignId}`)).json(),
+    enabled: !!campaignId,
   });
   const volunteers: any[] = volunteersData?.items ?? [];
+
+  const { data: claimsData } = useQuery({
+    queryKey: ["claims", "canvass", campaignId],
+    queryFn: async () => (await fetch(`/api/claims?channel=canvass&campaignId=${campaignId}`)).json(),
+    enabled: !!campaignId,
+    refetchInterval: 8_000,
+  });
+  const claims: any[] = claimsData?.items ?? [];
+  const claimedByOthers = new Map(
+    claims
+      .filter((c: any) => c.volunteerId !== activeVolunteerId)
+      .map((c: any) => [c.voterId, c.volunteerName])
+  );
+
+  async function claimVoter(voter: any) {
+    if (!activeVolunteerId) {
+      toast({ title: "Select who's canvassing first", variant: "destructive" });
+      return;
+    }
+    if (claimedByOthers.has(voter.id)) return;
+    const r = await fetch("/api/claims", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ voterId: voter.id, channel: "canvass", volunteerId: activeVolunteerId }),
+    });
+    qc.invalidateQueries({ queryKey: ["claims", "canvass"] });
+    if (r.status === 409) {
+      const body = await r.json();
+      toast({ title: `Already being knocked by ${body.claimedBy}`, variant: "destructive" });
+      return;
+    }
+    setClaimedVoterId(voter.id);
+    setLogOpen(true);
+  }
+
+  function releaseClaim() {
+    if (!claimedVoterId || !activeVolunteerId) return;
+    fetch("/api/claims", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ voterId: claimedVoterId, channel: "canvass", volunteerId: activeVolunteerId }),
+    }).then(() => qc.invalidateQueries({ queryKey: ["claims", "canvass"] }));
+    setClaimedVoterId(null);
+  }
 
   // Build walk lists grouped by precinct (top 5 streets to knock)
   const walkLists = (voters || [])
     .filter((v) => v.supportLevel === "undecided" || v.supportLevel === "unknown" || v.supportLevel === "lean-support")
-    .reduce((acc, v) => {
+    .reduce<Record<string, any[]>>((acc, v) => {
       const key = v.precinct?.name ?? "Unassigned";
       if (!acc[key]) acc[key] = [];
       acc[key].push(v);
       return acc;
-    }, {} as Record<string, any[]>);
+    }, {});
   const walkListEntries = Object.entries(walkLists).sort((a, b) => b[1].length - a[1].length).slice(0, 5);
 
   // Summary
@@ -101,6 +155,21 @@ export function CanvassView() {
 
   return (
     <div className="p-4 md:p-6 space-y-4">
+      {/* Who's canvassing */}
+      <div className="flex items-center gap-2">
+        <Label className="text-xs whitespace-nowrap">Canvassing as</Label>
+        <Select value={activeVolunteerId} onValueChange={setActiveVolunteerId}>
+          <SelectTrigger className="h-8 w-[220px] text-xs">
+            <SelectValue placeholder="Select yourself…" />
+          </SelectTrigger>
+          <SelectContent>
+            {volunteers.map((v) => (
+              <SelectItem key={v.id} value={v.id}>{v.firstName} {v.lastName}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <SummaryCard icon={DoorOpen} label="Doors knocked" value={total} sub="Total attempts" accent="violet" />
@@ -131,13 +200,29 @@ export function CanvassView() {
                     </Badge>
                   </div>
                   <div className="mt-2 space-y-0.5">
-                    {list.slice(0, 4).map((v) => (
-                      <div key={v.id} className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                        <MapPin className="size-3" />
-                        <span className="flex-1 truncate">{v.household?.address ?? v.registeredAddress}</span>
-                        <SupportBadge level={v.supportLevel} />
-                      </div>
-                    ))}
+                    {list.slice(0, 4).map((v) => {
+                      const claimedBy = claimedByOthers.get(v.id);
+                      return (
+                        <button
+                          key={v.id}
+                          type="button"
+                          onClick={() => claimVoter(v)}
+                          disabled={!!claimedBy}
+                          className={cn(
+                            "flex w-full items-center gap-2 text-[11px] text-muted-foreground rounded px-1 -mx-1 py-0.5 text-left",
+                            claimedBy ? "opacity-50 cursor-not-allowed" : "hover:bg-accent/50"
+                          )}
+                        >
+                          <MapPin className="size-3" />
+                          <span className="flex-1 truncate">{v.household?.address ?? v.registeredAddress}</span>
+                          {claimedBy ? (
+                            <Badge variant="outline" className="text-[9px] py-0 h-4">Knocking: {claimedBy}</Badge>
+                          ) : (
+                            <SupportBadge level={v.supportLevel} />
+                          )}
+                        </button>
+                      );
+                    })}
                     {list.length > 4 && (
                       <div className="text-[11px] text-muted-foreground italic pt-1">
                         + {list.length - 4} more
@@ -225,16 +310,23 @@ export function CanvassView() {
 
       {/* Log outcome dialog */}
       <LogCanvassDialog
+        key={claimedVoterId ?? "manual"}
         open={logOpen}
-        onOpenChange={setLogOpen}
+        onOpenChange={(o) => {
+          setLogOpen(o);
+          if (!o) releaseClaim();
+        }}
         voters={voters}
         volunteers={volunteers}
+        defaultVoterId={claimedVoterId ?? undefined}
+        volunteerId={activeVolunteerId}
         onSaved={() => {
           qc.invalidateQueries({ queryKey: ["canvass-logs"] });
           qc.invalidateQueries({ queryKey: ["canvass-voters"] });
           qc.invalidateQueries({ queryKey: ["dashboard"] });
           toast({ title: "Canvass outcome logged", duration: 1500 });
           setLogOpen(false);
+          releaseClaim();
         }}
       />
     </div>
@@ -265,14 +357,15 @@ function SummaryCard({ icon: Icon, label, value, sub, accent }: {
   );
 }
 
-function LogCanvassDialog({ open, onOpenChange, voters, volunteers, onSaved }: {
+function LogCanvassDialog({ open, onOpenChange, voters, volunteers, defaultVoterId, volunteerId, onSaved }: {
   open: boolean; onOpenChange: (o: boolean) => void;
   voters: any[]; volunteers: any[];
+  defaultVoterId?: string;
+  volunteerId?: string;
   onSaved: () => void;
 }) {
   const { toast } = useToast();
-  const [voterId, setVoterId] = useState("");
-  const [volunteerId, setVolunteerId] = useState("");
+  const [voterId, setVoterId] = useState(defaultVoterId ?? "");
   const [outcome, setOutcome] = useState("canvassed");
   const [support, setSupport] = useState("");
   const [yardSign, setYardSign] = useState(false);
@@ -301,13 +394,15 @@ function LogCanvassDialog({ open, onOpenChange, voters, volunteers, onSaved }: {
     });
     setSaving(false);
     if (r.ok) {
-      setVoterId(""); setVolunteerId(""); setOutcome("canvassed");
+      setVoterId(""); setOutcome("canvassed");
       setSupport(""); setYardSign(false); setIssue(""); setNotes("");
       onSaved();
     } else {
       toast({ title: "Failed to log", variant: "destructive" });
     }
   }
+
+  const activeVolunteer = volunteers.find((v) => v.id === volunteerId);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -332,15 +427,10 @@ function LogCanvassDialog({ open, onOpenChange, voters, volunteers, onSaved }: {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs">Volunteer</Label>
-              <Select value={volunteerId} onValueChange={setVolunteerId}>
-                <SelectTrigger className="mt-1"><SelectValue placeholder="Optional" /></SelectTrigger>
-                <SelectContent>
-                  {volunteers.map((v) => (
-                    <SelectItem key={v.id} value={v.id}>{v.firstName} {v.lastName}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-xs">Logging as</Label>
+              <div className="mt-1 h-9 flex items-center px-3 rounded-md border bg-muted/30 text-sm text-muted-foreground">
+                {activeVolunteer ? `${activeVolunteer.firstName} ${activeVolunteer.lastName}` : "—"}
+              </div>
             </div>
             <div>
               <Label className="text-xs">Outcome</Label>
@@ -361,7 +451,6 @@ function LogCanvassDialog({ open, onOpenChange, voters, volunteers, onSaved }: {
                 <Select value={support} onValueChange={setSupport}>
                   <SelectTrigger className="mt-1"><SelectValue placeholder="None" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
                     {SUPPORT_LEVELS.map((s) => (
                       <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                     ))}
@@ -373,7 +462,6 @@ function LogCanvassDialog({ open, onOpenChange, voters, volunteers, onSaved }: {
                 <Select value={issue} onValueChange={setIssue}>
                   <SelectTrigger className="mt-1"><SelectValue placeholder="None" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
                     {ISSUES.map((i) => (
                       <SelectItem key={i} value={i}>{i}</SelectItem>
                     ))}

@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
+import { requireCampaignAccess } from "@/lib/api-auth";
+import { parseBody } from "@/lib/api-validate";
+import { donationCreateSchema } from "@/lib/validation/donation";
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const donorId = sp.get("donorId");
-  const where: Prisma.DonationWhereInput = {};
+  const campaignId = sp.get("campaignId");
+  const access = await requireCampaignAccess(campaignId, { role: "owner" });
+  if ("error" in access) return access.error;
+
+  const where: Prisma.DonationWhereInput = { campaignId: access.campaignId };
   if (donorId) where.donorId = donorId;
 
   const donations = await db.donation.findMany({
@@ -32,22 +39,17 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const { amountCents, donorId, campaignId, method, donationDate, inKindDescription, complianceVerified, notes } = body;
-  if (!amountCents || !donorId) {
-    return NextResponse.json({ error: "missing fields" }, { status: 400 });
-  }
-  let cid = campaignId;
-  if (!cid) {
-    const c = await db.campaign.findFirst({ orderBy: { createdAt: "asc" } });
-    if (!c) return NextResponse.json({ error: "no campaign" }, { status: 400 });
-    cid = c.id;
-  }
+  const parsed = await parseBody(req, donationCreateSchema);
+  if ("error" in parsed) return parsed.error;
+  const { amountCents, donorId, campaignId, method, donationDate, inKindDescription, complianceVerified, notes } = parsed.data;
+  const access = await requireCampaignAccess(campaignId, { role: "owner" });
+  if ("error" in access) return access.error;
+
   const donation = await db.donation.create({
     data: {
       amountCents,
       donorId,
-      campaignId: cid,
+      campaignId: access.campaignId,
       method: method ?? "online",
       donationDate: donationDate ? new Date(donationDate) : new Date(),
       inKindDescription,

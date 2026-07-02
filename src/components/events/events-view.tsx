@@ -42,6 +42,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useApp } from "@/lib/store";
 
 const TYPE_INFO: Record<string, { label: string; icon: any; color: string }> = {
   "town-hall": { label: "Town Hall", icon: Megaphone, color: "bg-amber-500/10 text-amber-700 dark:text-amber-300" },
@@ -57,10 +58,12 @@ export function EventsView() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [createOpen, setCreateOpen] = useState(false);
+  const campaignId = useApp((s) => s.currentCampaignId);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["events"],
-    queryFn: async () => (await fetch("/api/events")).json(),
+    queryKey: ["events", campaignId],
+    queryFn: async () => (await fetch(`/api/events?campaignId=${campaignId}`)).json(),
+    enabled: !!campaignId,
   });
   const events: any[] = data?.items ?? [];
 
@@ -106,6 +109,7 @@ export function EventsView() {
         <CreateEventDialog
           open={createOpen}
           onOpenChange={setCreateOpen}
+          campaignId={campaignId}
           onSaved={() => {
             qc.invalidateQueries({ queryKey: ["events"] });
             qc.invalidateQueries({ queryKey: ["dashboard"] });
@@ -240,8 +244,8 @@ function SummaryCard({ icon: Icon, label, value, sub, accent }: {
   );
 }
 
-function CreateEventDialog({ open, onOpenChange, onSaved }: {
-  open: boolean; onOpenChange: (o: boolean) => void; onSaved: () => void;
+function CreateEventDialog({ open, onOpenChange, campaignId, onSaved }: {
+  open: boolean; onOpenChange: (o: boolean) => void; campaignId: string | null; onSaved: () => void;
 }) {
   const { toast } = useToast();
   const [title, setTitle] = useState("");
@@ -264,11 +268,6 @@ function CreateEventDialog({ open, onOpenChange, onSaved }: {
     const start = new Date(`${date}T${time}`);
     const end = new Date(start.getTime() + (parseInt(duration) || 90) * 60_000);
 
-    const campaignRes = await fetch("/api/dashboard");
-    const campaign = await campaignRes.json();
-    const campaignId = campaign?.campaign?.id;
-
-    // Get the campaign id from a more reliable source
     const r = await fetch("/api/events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

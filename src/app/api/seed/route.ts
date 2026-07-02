@@ -1,32 +1,105 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { db } from "@/lib/db";
+import type { Household, Voter } from "@prisma/client";
+import { requireUser } from "@/lib/api-auth";
+import { seedOverridesSchema } from "@/lib/validation/seed";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
 
-// GET /api/seed — idempotent: only seeds if no campaign exists
+// GET /api/seed — first-run bootstrap only. Creates the demo campaign, a demo
+// owner user, and the membership linking them, but only if no User exists yet
+// (i.e. a genuinely fresh install with nobody able to log in). No auth
+// required here, since there's nobody to authenticate as before this runs.
+// Rate-limited by IP (rather than through requireUser, which doesn't apply
+// pre-login) since it's otherwise a cheap, unauthenticated DoS vector.
 export async function GET() {
+  const ip = getClientIp(await headers());
+  if (!checkRateLimit(`seed-get:${ip}`, { max: 10, windowMs: 60_000 })) {
+    return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429 });
+  }
+
   try {
-    const existing = await db.campaign.count();
-    if (existing > 0) {
-      return NextResponse.json({ ok: true, seeded: false, message: "Already seeded" });
+    const existingUsers = await db.user.count();
+    if (existingUsers > 0) {
+      return NextResponse.json({ ok: true, seeded: false, message: "Already bootstrapped" });
     }
-    await seedAll();
-    return NextResponse.json({ ok: true, seeded: true });
+
+    const campaign = await seedAll();
+
+    // Reuse ADMIN_EMAIL/ADMIN_PASSWORD_HASH from Phase 1 if present, so the
+    // credential that already worked keeps working. Otherwise generate one.
+    const email = process.env.ADMIN_EMAIL ?? "admin@example.com";
+    let passwordHash = process.env.ADMIN_PASSWORD_HASH;
+    let generatedPassword: string | null = null;
+    if (!passwordHash) {
+      generatedPassword = crypto.randomBytes(9).toString("base64url");
+      passwordHash = await bcrypt.hash(generatedPassword, 10);
+    }
+
+    const user = await db.user.create({
+      data: { email, passwordHash, name: "Campaign Owner" },
+    });
+    await db.campaignMembership.create({
+      data: { userId: user.id, campaignId: campaign.id, role: "owner" },
+    });
+
+    return NextResponse.json({
+      ok: true,
+      seeded: true,
+      campaignId: campaign.id,
+      loginEmail: email,
+      ...(generatedPassword ? { generatedPassword } : {}),
+    });
   } catch (e) {
     console.error("Seed error:", e);
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });
   }
 }
 
-async function seedAll() {
+// POST /api/seed — creates an *additional* campaign and grants the calling
+// (already logged-in) user owner membership on it, without touching any
+// existing campaign/user data.
+export async function POST(req: NextRequest) {
+  const access = await requireUser();
+  if ("error" in access) return access.error;
+
+  try {
+    const rawBody = await req.json().catch(() => ({}));
+    const parsed = seedOverridesSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return NextResponse.json({ ok: false, error: "Invalid request body" }, { status: 400 });
+    }
+    const campaign = await seedAll(parsed.data);
+    await db.campaignMembership.create({
+      data: { userId: access.userId, campaignId: campaign.id, role: "owner" },
+    });
+    return NextResponse.json({ ok: true, campaignId: campaign.id });
+  } catch (e) {
+    console.error("Seed error:", e);
+    return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });
+  }
+}
+
+async function seedAll(overrides?: {
+  candidateName?: string;
+  officeSought?: string;
+  district?: string;
+  party?: string;
+  voteGoal?: number;
+  fundraisingGoalCents?: number;
+}) {
   // ===== Campaign =====
   const campaign = await db.campaign.create({
     data: {
-      candidateName: "Jordan Avery",
-      officeSought: "City Council, District 4",
-      district: "District 4",
-      party: "Nonpartisan",
+      candidateName: overrides?.candidateName ?? "Jordan Avery",
+      officeSought: overrides?.officeSought ?? "City Council, District 4",
+      district: overrides?.district ?? "District 4",
+      party: overrides?.party ?? "Nonpartisan",
       electionDate: new Date(Date.now() + 47 * 86_400_000),
-      fundraisingGoalCents: 75_000_00,
-      voteGoal: 4200,
+      fundraisingGoalCents: overrides?.fundraisingGoalCents ?? 75_000_00,
+      voteGoal: overrides?.voteGoal ?? 4200,
     },
   });
 
@@ -41,7 +114,7 @@ async function seedAll() {
   const precincts = await Promise.all(
     precinctNames.map((p) =>
       db.precinct.create({
-        data: { ...p, totalRegisteredVoters: 800 + Math.floor(Math.random() * 600) },
+        data: { ...p, totalRegisteredVoters: 800 + Math.floor(Math.random() * 600), campaignId: campaign.id },
       })
     )
   );
@@ -52,7 +125,7 @@ async function seedAll() {
     "Elm Ct", "Willow Rd", "Sycamore Pl", "Aspen Blvd", "Walnut St",
     "Cherry St", "Spruce Ave", "Hawthorn Ln", "Magnolia Way", "Poplar Dr",
   ];
-  const households = [];
+  const households: Household[] = [];
   for (let i = 0; i < 120; i++) {
     const street = streets[i % streets.length];
     const num = 100 + i * 7;
@@ -89,7 +162,7 @@ async function seedAll() {
     return arr[arr.length - 1];
   }
 
-  const voters = [];
+  const voters: Voter[] = [];
   for (let i = 0; i < 280; i++) {
     const first = pick(firstNames);
     const last = pick(lastNames);
@@ -199,7 +272,7 @@ async function seedAll() {
   // ===== Donations =====
   const methods = ["online", "check", "cash", "in-kind"];
   const now = Date.now();
-  const donations = [];
+  const donations: ReturnType<typeof db.donation.create>[] = [];
   for (let i = 0; i < 60; i++) {
     const donor = donors[i % donors.length];
     const baseAmount = donor.capacity === "major" ? 1500_00 : donor.capacity === "mid" ? 250_00 : 50_00;
@@ -340,4 +413,6 @@ async function seedAll() {
       },
     });
   }
+
+  return campaign;
 }

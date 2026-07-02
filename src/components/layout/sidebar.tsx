@@ -1,6 +1,7 @@
 "use client";
 
 import { useApp, type Module } from "@/lib/store";
+import { useCurrentRole } from "@/lib/memberships";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -20,6 +21,7 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   hint?: string;
+  ownerOnly?: boolean;
 }
 
 const NAV: { section: string; items: NavItem[] }[] = [
@@ -34,7 +36,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
     items: [
       { id: "voters", label: "Voters", icon: Users, hint: "Database" },
       { id: "volunteers", label: "Volunteers", icon: HeartHandshake },
-      { id: "donors", label: "Donors", icon: DollarSign },
+      { id: "donors", label: "Donors", icon: DollarSign, ownerOnly: true },
     ],
   },
   {
@@ -56,6 +58,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
 export function Sidebar() {
   const active = useApp((s) => s.active);
   const setModule = useApp((s) => s.set);
+  const role = useCurrentRole();
 
   return (
     <aside className="hidden md:flex md:w-64 md:flex-col border-r border-sidebar-border bg-sidebar">
@@ -80,7 +83,7 @@ export function Sidebar() {
               {group.section}
             </div>
             <ul className="space-y-0.5">
-              {group.items.map((item) => {
+              {group.items.filter((item) => !item.ownerOnly || role === "owner").map((item) => {
                 const Icon = item.icon;
                 const isActive = active === item.id;
                 return (

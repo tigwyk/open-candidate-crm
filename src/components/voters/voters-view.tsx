@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 import { PersonAvatar } from "@/components/common/person-avatar";
 import { SupportBadge, PartyBadge } from "@/components/common/badges";
-import { SUPPORT_LEVELS, type Voter } from "@/lib/types";
+import { SUPPORT_LEVELS, SUPPORT_SOURCE_LABELS, type Voter } from "@/lib/types";
 import { formatCurrency, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -44,6 +44,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { useApp } from "@/lib/store";
 
 interface VoterRow extends Voter {
   precinct?: { name: string; code: string } | null;
@@ -54,6 +55,7 @@ interface VoterRow extends Voter {
 export function VotersView() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const campaignId = useApp((s) => s.currentCampaignId);
   const [q, setQ] = useState("");
   const [supportFilter, setSupportFilter] = useState<string>("all");
   const [partyFilter, setPartyFilter] = useState<string>("all");
@@ -68,11 +70,13 @@ export function VotersView() {
   }, [q]);
 
   const { data: precinctsData } = useQuery({
-    queryKey: ["precincts"],
-    queryFn: async () => (await fetch("/api/precincts")).json(),
+    queryKey: ["precincts", campaignId],
+    queryFn: async () => (await fetch(`/api/precincts?campaignId=${campaignId}`)).json(),
+    enabled: !!campaignId,
   });
 
   const params = new URLSearchParams();
+  if (campaignId) params.set("campaignId", campaignId);
   if (debouncedQ) params.set("q", debouncedQ);
   if (supportFilter !== "all") params.set("support", supportFilter);
   if (partyFilter !== "all") params.set("party", partyFilter);
@@ -85,6 +89,7 @@ export function VotersView() {
       const r = await fetch(`/api/voters?${params}`);
       return r.json();
     },
+    enabled: !!campaignId,
     staleTime: 10_000,
   });
 
@@ -417,6 +422,11 @@ function VoterDetailForm({
               </button>
             ))}
           </div>
+          {voter.supportLevelSource && (
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Last set via {SUPPORT_SOURCE_LABELS[voter.supportLevelSource] ?? voter.supportLevelSource}
+            </p>
+          )}
         </div>
 
         {/* Toggles */}

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { DashboardMetrics } from "@/lib/types";
+import { useApp } from "@/lib/store";
 import { StatCard } from "@/components/common/stat-card";
 import { FundraisingBar } from "@/components/common/fundraising-bar";
 import { PersonAvatar } from "@/components/common/person-avatar";
@@ -48,14 +49,17 @@ import {
 } from "recharts";
 
 export function DashboardView() {
+  const campaignId = useApp((s) => s.currentCampaignId);
   const { data, isLoading, isError, refetch } = useQuery<DashboardMetrics>({
-    queryKey: ["dashboard"],
+    queryKey: ["dashboard", campaignId],
     queryFn: async () => {
-      const r = await fetch("/api/dashboard");
+      const r = await fetch(`/api/dashboard?campaignId=${campaignId}`);
       if (!r.ok) throw new Error("failed");
       return r.json();
     },
+    enabled: !!campaignId,
     staleTime: 30_000,
+    refetchInterval: 20_000,
   });
 
   if (isLoading) return <DashboardSkeleton />;

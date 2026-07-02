@@ -1,11 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import type { DashboardMetrics } from "@/lib/types";
+import { requireCampaignAccess } from "@/lib/api-auth";
 
-export async function GET() {
-  const campaign = await db.campaign.findFirst({
-    orderBy: { createdAt: "asc" },
-  });
+export async function GET(req: NextRequest) {
+  const campaignId = req.nextUrl.searchParams.get("campaignId");
+  const access = await requireCampaignAccess(campaignId);
+  if ("error" in access) return access.error;
+
+  const campaign = await db.campaign.findUnique({ where: { id: access.campaignId } });
   if (!campaign) {
     return NextResponse.json({ error: "no campaign" }, { status: 404 });
   }
@@ -146,7 +149,7 @@ export async function GET() {
 
   // Recent activity feed
   const recentActivity: DashboardMetrics["recentActivity"] = [];
-  recentDonations.slice(0, 3).forEach((d) => {
+  if (access.role === "owner") recentDonations.slice(0, 3).forEach((d) => {
     recentActivity.push({
       kind: "donation",
       label: `${d.donor?.firstName ?? ""} ${d.donor?.lastName ?? ""} donated`,
@@ -201,6 +204,7 @@ export async function GET() {
       candidateName: campaign.candidateName,
       officeSought: campaign.officeSought,
       district: campaign.district,
+      party: campaign.party,
       electionDate: campaign.electionDate.toISOString(),
       fundraisingGoalCents: campaign.fundraisingGoalCents,
       voteGoal: campaign.voteGoal,
@@ -223,7 +227,7 @@ export async function GET() {
       goalCents: campaign.fundraisingGoalCents,
       percent: campaign.fundraisingGoalCents > 0 ? (raisedCents / campaign.fundraisingGoalCents) * 100 : 0,
       byMethod: donationsByMethodRaw.map((d) => ({ method: d.method, totalCents: d._sum.amountCents ?? 0 })),
-      recent: recentDonations.map((d) => ({
+      recent: access.role !== "owner" ? [] : recentDonations.map((d) => ({
         id: d.id,
         amountCents: d.amountCents,
         donationDate: d.donationDate.toISOString(),

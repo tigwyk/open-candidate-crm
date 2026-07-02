@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -32,6 +32,62 @@ model Campaign {
   voters       Voter[]
   callLogs     CallLog[]
   canvassLogs  CanvassLog[]
+  precincts    Precinct[]
+  contactClaims ContactClaim[]
+  memberships  CampaignMembership[]
+  invites      Invite[]
+}
+
+// ===== User / Membership (multi-campaign access) =====
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships  CampaignMembership[]
+  sentInvites  Invite[]
+}
+
+model CampaignMembership {
+  id         String   @id @default(cuid())
+  role       String   @default("member") // "owner" | "member"
+  createdAt  DateTime @default(now())
+
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+
+  @@unique([userId, campaignId])
+}
+
+// ===== Invite (team-member invites to an existing campaign) =====
+model Invite {
+  id                String    @id @default(cuid())
+  email             String
+  token             String    @unique
+  status            String    @default("pending") // "pending" | "accepted" | "revoked" | "expired" | "bounced"
+  expiresAt         DateTime
+  createdAt         DateTime  @default(now())
+  acceptedAt        DateTime?
+
+  postmarkMessageId String?
+  postmarkBounceId  Int?
+  bounceType        String?
+  bouncedAt         DateTime?
+
+  campaignId  String
+  campaign    Campaign  @relation(fields: [campaignId], references: [id])
+
+  invitedById String
+  invitedBy   User      @relation(fields: [invitedById], references: [id])
+
+  @@unique([campaignId, email])
+  @@index([status])
 }
 
 // ===== Precinct / District =====
@@ -42,6 +98,9 @@ model Precinct {
   ward      String?
   totalRegisteredVoters Int?
   createdAt DateTime @default(now())
+
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
 
   households Household[]
   voters     Voter[]
@@ -82,6 +141,7 @@ model Voter {
   votedIn2022     Boolean?
   votedIn2020     Boolean?
   supportLevel    String   @default("unknown") // strong-support, lean-support, undecided, lean-oppose, strong-oppose, unknown
+  supportLevelSource String @default("manual") // manual, canvass, call — which write path last set supportLevel
   volunteer        Boolean  @default(false)
   hasYardSign     Boolean  @default(false)
   hasBumperSticker Boolean @default(false)
@@ -105,6 +165,7 @@ model Voter {
   eventAttendees  EventAttendee[]
   assignedTasks   Task[]
   donor           Donor?
+  contactClaims   ContactClaim[]
 }
 
 // ===== Volunteer =====
@@ -131,6 +192,7 @@ model Volunteer {
   eventAttendees EventAttendee[]
   callLogs    CallLog[]
   canvassLogs CanvassLog[]
+  contactClaims ContactClaim[]
 }
 
 // ===== Donor =====
@@ -281,10 +343,18 @@ model CallLog {
   createdAt     DateTime @default(now())
 }
 
-// ===== Outreach Metrics Snapshot (denormalized for dashboard) =====
-model Metric {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  value     Float
-  updatedAt DateTime @updatedAt
+// ===== ContactClaim (in-progress lock so volunteers don't duplicate work) =====
+model ContactClaim {
+  id          String   @id @default(cuid())
+  voterId     String
+  voter       Voter    @relation(fields: [voterId], references: [id])
+  channel     String   // "call" | "canvass"
+  volunteerId String
+  volunteer   Volunteer @relation(fields: [volunteerId], references: [id])
+  claimedAt   DateTime @default(now())
+
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+
+  @@unique([voterId, channel])
 }
