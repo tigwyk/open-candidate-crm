@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
+import Link from "next/link";
 import { useApp } from "@/lib/store";
-import { Search, Bell, Plus, Menu, LogOut, Sun, Moon, ChevronsUpDown, UserPlus } from "lucide-react";
+import { Search, Bell, Plus, Menu, LogOut, Sun, Moon, ChevronsUpDown, UserPlus, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +13,7 @@ import { useApp as useAppStore } from "@/lib/store";
 import { Badge } from "@/components/ui/badge";
 import { signOut, useSession } from "next-auth/react";
 import { useTheme } from "next-themes";
-import { useCurrentRole, useMemberships } from "@/lib/memberships";
+import { useCurrentRole, useIsPlatformOwner, useMemberships } from "@/lib/memberships";
 import { useInvites } from "@/lib/invites";
 import { useToast } from "@/hooks/use-toast";
 import { useSavingAction } from "@/lib/use-saving-action";
@@ -78,6 +79,7 @@ export function Topbar() {
   const setCampaign = useApp((s) => s.setCampaign);
   const currentMembership = memberships.find((m) => m.campaignId === currentCampaignId);
   const currentRole = useCurrentRole();
+  const isPlatformOwner = useIsPlatformOwner();
   const [inviteOpen, setInviteOpen] = useState(false);
 
   const displayName = session?.user?.name ?? session?.user?.email ?? "—";
@@ -141,6 +143,14 @@ export function Topbar() {
           onOpenChange={setInviteOpen}
           campaignId={currentCampaignId}
         />
+      )}
+
+      {isPlatformOwner && (
+        <Button variant="outline" size="icon" className="h-8 w-8" aria-label="Platform admin" asChild>
+          <Link href="/platform-admin">
+            <Shield className="size-4" />
+          </Link>
+        </Button>
       )}
 
       <div className="hidden sm:flex items-center gap-2 pl-2 border-l">

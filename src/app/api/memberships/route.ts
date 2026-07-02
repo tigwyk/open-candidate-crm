@@ -6,11 +6,14 @@ export async function GET() {
   const access = await requireUser();
   if ("error" in access) return access.error;
 
-  const memberships = await db.campaignMembership.findMany({
-    where: { userId: access.userId },
-    include: { campaign: { select: { candidateName: true, officeSought: true } } },
-    orderBy: { createdAt: "asc" },
-  });
+  const [memberships, user] = await Promise.all([
+    db.campaignMembership.findMany({
+      where: { userId: access.userId },
+      include: { campaign: { select: { candidateName: true, officeSought: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+    db.user.findUnique({ where: { id: access.userId }, select: { isPlatformOwner: true } }),
+  ]);
 
   return NextResponse.json({
     items: memberships.map((m) => ({
@@ -19,5 +22,6 @@ export async function GET() {
       officeSought: m.campaign.officeSought,
       role: m.role,
     })),
+    isPlatformOwner: user?.isPlatformOwner ?? false,
   });
 }

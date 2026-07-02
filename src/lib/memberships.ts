@@ -11,7 +11,7 @@ export interface Membership {
 export function useMemberships() {
   return useQuery({
     queryKey: ["memberships"],
-    queryFn: async (): Promise<{ items: Membership[] }> =>
+    queryFn: async (): Promise<{ items: Membership[]; isPlatformOwner: boolean }> =>
       (await fetch("/api/memberships")).json(),
   });
 }
@@ -21,4 +21,9 @@ export function useCurrentRole(): "owner" | "member" | null {
   const { data } = useMemberships();
   const membership = data?.items.find((m) => m.campaignId === currentCampaignId);
   return membership?.role ?? null;
+}
+
+export function useIsPlatformOwner(): boolean {
+  const { data } = useMemberships();
+  return data?.isPlatformOwner ?? false;
 }

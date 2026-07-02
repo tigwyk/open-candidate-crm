@@ -45,7 +45,8 @@ export async function POST(req: NextRequest) {
   const passwordHash = await bcrypt.hash(password, 10);
 
   await db.$transaction(async (tx) => {
-    const user = await tx.user.create({ data: { email, passwordHash, name } });
+    const isFirstUser = (await tx.user.count()) === 0;
+    const user = await tx.user.create({ data: { email, passwordHash, name, isPlatformOwner: isFirstUser } });
     const campaign = await tx.campaign.create({
       data: {
         candidateName,

@@ -69,6 +69,27 @@ export async function requireCampaignAccess(
   };
 }
 
+type PlatformOwnerResult = { error: NextResponse } | { userId: string };
+
+// Deployment-wide access, separate from any CampaignMembership — gates the
+// read-only cross-campaign admin view. Granted to whoever created the first
+// account in the deployment (see src/app/api/seed/route.ts and
+// src/app/api/signup/route.ts), transferable via POST /api/platform/transfer.
+export async function requirePlatformOwner(): Promise<PlatformOwnerResult> {
+  const u = await requireUser();
+  if ("error" in u) return u;
+
+  const user = await db.user.findUnique({
+    where: { id: u.userId },
+    select: { isPlatformOwner: true },
+  });
+  if (!user?.isPlatformOwner) {
+    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+  }
+
+  return { userId: u.userId };
+}
+
 type FindFirstIdDelegate = {
   findFirst(args: {
     where: { id: string; campaignId: string };
