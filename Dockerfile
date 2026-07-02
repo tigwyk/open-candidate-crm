@@ -10,6 +10,9 @@ COPY . .
 RUN bunx prisma generate
 RUN bun run build
 
+RUN chown -R bun:bun /app
+USER bun
+
 ENV NODE_ENV=production
 EXPOSE 3000
 

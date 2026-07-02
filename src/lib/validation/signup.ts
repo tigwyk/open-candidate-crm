@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const passwordSchema = z.string().min(8);
+export const passwordSchema = z.string().min(12);
 
 export const signupSchema = z.object({
   name: z.string().min(1),

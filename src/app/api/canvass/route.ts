@@ -48,6 +48,15 @@ export async function POST(req: NextRequest) {
   const access = await requireCampaignAccess(campaignId);
   if ("error" in access) return access.error;
 
+  const [voter, household, volunteer] = await Promise.all([
+    voterId ? db.voter.findFirst({ where: { id: voterId, campaignId: access.campaignId }, select: { id: true } }) : null,
+    householdId ? db.household.findFirst({ where: { id: householdId, campaignId: access.campaignId }, select: { id: true } }) : null,
+    volunteerId ? db.volunteer.findFirst({ where: { id: volunteerId, campaignId: access.campaignId }, select: { id: true } }) : null,
+  ]);
+  if (voterId && !voter) return NextResponse.json({ error: "Invalid voter" }, { status: 400 });
+  if (householdId && !household) return NextResponse.json({ error: "Invalid household" }, { status: 400 });
+  if (volunteerId && !volunteer) return NextResponse.json({ error: "Invalid volunteer" }, { status: 400 });
+
   const log = await db.canvassLog.create({
     data: {
       voterId,

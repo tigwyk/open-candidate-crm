@@ -4,6 +4,22 @@ const client = process.env.POSTMARK_SERVER_TOKEN
   ? new ServerClient(process.env.POSTMARK_SERVER_TOKEN)
   : null;
 
+// campaignName/invitedByName are free-text fields a user chose at signup —
+// never trust them as safe HTML. Also strip CR/LF so they can't smuggle
+// header-like content into the Subject line.
+function escapeHtml(input: string): string {
+  return input
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function stripNewlines(input: string): string {
+  return input.replace(/[\r\n]+/g, " ");
+}
+
 export async function sendInviteEmail(opts: {
   to: string;
   campaignName: string;
@@ -12,7 +28,9 @@ export async function sendInviteEmail(opts: {
   inviteId: string;
 }): Promise<{ messageId: string } | undefined> {
   const inviteUrl = `${process.env.NEXTAUTH_URL}/invite/${opts.token}`;
-  const subject = `${opts.invitedByName} invited you to join ${opts.campaignName} on CampaignGround`;
+  const invitedByName = stripNewlines(opts.invitedByName);
+  const campaignName = stripNewlines(opts.campaignName);
+  const subject = `${invitedByName} invited you to join ${campaignName} on CampaignGround`;
 
   if (!client) {
     // Dev convenience: no POSTMARK_SERVER_TOKEN configured. Log instead of
@@ -29,11 +47,11 @@ export async function sendInviteEmail(opts: {
     To: opts.to,
     Subject: subject,
     HtmlBody: `
-      <p>${opts.invitedByName} invited you to join <strong>${opts.campaignName}</strong> on CampaignGround.</p>
+      <p>${escapeHtml(invitedByName)} invited you to join <strong>${escapeHtml(campaignName)}</strong> on CampaignGround.</p>
       <p><a href="${inviteUrl}">Accept the invite</a></p>
       <p>This link expires in 7 days.</p>
     `,
-    TextBody: `${opts.invitedByName} invited you to join ${opts.campaignName} on CampaignGround.\n\nAccept the invite: ${inviteUrl}\n\nThis link expires in 7 days.`,
+    TextBody: `${invitedByName} invited you to join ${campaignName} on CampaignGround.\n\nAccept the invite: ${inviteUrl}\n\nThis link expires in 7 days.`,
     MessageStream: "outbound",
     Metadata: { inviteId: opts.inviteId },
   });

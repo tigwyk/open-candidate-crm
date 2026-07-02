@@ -106,7 +106,7 @@ export default function SignupPage() {
                   id="password"
                   type="password"
                   autoComplete="new-password"
-                  minLength={8}
+                  minLength={12}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required

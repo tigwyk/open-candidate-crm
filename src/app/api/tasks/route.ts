@@ -49,6 +49,14 @@ export async function PATCH(req: NextRequest) {
   const access = await requireCampaignAccess(task.campaignId);
   if ("error" in access) return access.error;
 
+  if (assignedVolunteerId) {
+    const volunteer = await db.volunteer.findFirst({
+      where: { id: assignedVolunteerId, campaignId: access.campaignId },
+      select: { id: true },
+    });
+    if (!volunteer) return NextResponse.json({ error: "Invalid volunteer" }, { status: 400 });
+  }
+
   const data: Prisma.TaskUpdateInput = {};
   if (status) data.status = status;
   if (priority) data.priority = priority;
@@ -68,6 +76,14 @@ export async function POST(req: NextRequest) {
   const { title, description, priority, dueDate, campaignId, assignedVolunteerId } = parsed.data;
   const access = await requireCampaignAccess(campaignId);
   if ("error" in access) return access.error;
+
+  if (assignedVolunteerId) {
+    const volunteer = await db.volunteer.findFirst({
+      where: { id: assignedVolunteerId, campaignId: access.campaignId },
+      select: { id: true },
+    });
+    if (!volunteer) return NextResponse.json({ error: "Invalid volunteer" }, { status: 400 });
+  }
 
   const task = await db.task.create({
     data: {

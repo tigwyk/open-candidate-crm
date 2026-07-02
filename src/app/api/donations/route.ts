@@ -45,6 +45,12 @@ export async function POST(req: NextRequest) {
   const access = await requireCampaignAccess(campaignId, { role: "owner" });
   if ("error" in access) return access.error;
 
+  const donor = await db.donor.findFirst({
+    where: { id: donorId, campaignId: access.campaignId },
+    select: { id: true },
+  });
+  if (!donor) return NextResponse.json({ error: "Invalid donor" }, { status: 400 });
+
   const donation = await db.donation.create({
     data: {
       amountCents,

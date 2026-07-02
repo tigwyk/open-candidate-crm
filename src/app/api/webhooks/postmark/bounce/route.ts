@@ -1,5 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual, createHash } from "crypto";
 import { db } from "@/lib/db";
+
+// Constant-time string comparison, immune to both content and length
+// timing side-channels (hash both sides to a fixed-length digest first).
+function timingSafeStringEqual(a: string, b: string): boolean {
+  const digestA = createHash("sha256").update(a).digest();
+  const digestB = createHash("sha256").update(b).digest();
+  return timingSafeEqual(digestA, digestB);
+}
 
 function isAuthorized(req: NextRequest): boolean {
   const expectedUser = process.env.POSTMARK_WEBHOOK_USERNAME;
@@ -15,7 +24,7 @@ function isAuthorized(req: NextRequest): boolean {
 
   const user = decoded.slice(0, separatorIndex);
   const pass = decoded.slice(separatorIndex + 1);
-  return user === expectedUser && pass === expectedPass;
+  return timingSafeStringEqual(user, expectedUser) && timingSafeStringEqual(pass, expectedPass);
 }
 
 // POST /api/webhooks/postmark/bounce — public, Basic Auth protected.

@@ -54,7 +54,7 @@ export async function GET() {
     });
   } catch (e) {
     console.error("Seed error:", e);
-    return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Internal error" }, { status: 500 });
   }
 }
 
@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, campaignId: campaign.id });
   } catch (e) {
     console.error("Seed error:", e);
-    return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Internal error" }, { status: 500 });
   }
 }
 

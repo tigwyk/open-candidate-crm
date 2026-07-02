@@ -48,6 +48,12 @@ export async function POST(req: NextRequest) {
   const access = await requireCampaignAccess(voter.campaignId);
   if ("error" in access) return access.error;
 
+  const volunteer = await db.volunteer.findFirst({
+    where: { id: volunteerId, campaignId: access.campaignId },
+    select: { id: true },
+  });
+  if (!volunteer) return NextResponse.json({ error: "Invalid volunteer" }, { status: 400 });
+
   const existing = await db.contactClaim.findUnique({
     where: { voterId_channel: { voterId, channel } },
     include: { volunteer: { select: { firstName: true, lastName: true } } },
