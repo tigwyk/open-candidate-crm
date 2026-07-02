@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireCampaignAccess } from "@/lib/api-auth";
+import { requireCampaignAccess, assertBelongsToCampaign } from "@/lib/api-auth";
 import { parseBody } from "@/lib/api-validate";
 import { claimBodySchema } from "@/lib/validation/claim";
 
@@ -48,11 +48,8 @@ export async function POST(req: NextRequest) {
   const access = await requireCampaignAccess(voter.campaignId);
   if ("error" in access) return access.error;
 
-  const volunteer = await db.volunteer.findFirst({
-    where: { id: volunteerId, campaignId: access.campaignId },
-    select: { id: true },
-  });
-  if (!volunteer) return NextResponse.json({ error: "Invalid volunteer" }, { status: 400 });
+  const volunteerErr = await assertBelongsToCampaign(db.volunteer, volunteerId, access.campaignId, "volunteer");
+  if (volunteerErr) return volunteerErr;
 
   const existing = await db.contactClaim.findUnique({
     where: { voterId_channel: { voterId, channel } },

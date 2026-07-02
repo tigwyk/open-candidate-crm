@@ -68,3 +68,46 @@ export async function requireCampaignAccess(
     role: membership.role as "owner" | "member",
   };
 }
+
+type PlatformOwnerResult = { error: NextResponse } | { userId: string };
+
+// Deployment-wide access, separate from any CampaignMembership — gates the
+// read-only cross-campaign admin view. Granted to whoever created the first
+// account in the deployment (see src/app/api/seed/route.ts and
+// src/app/api/signup/route.ts), transferable via POST /api/platform/transfer.
+export async function requirePlatformOwner(): Promise<PlatformOwnerResult> {
+  const u = await requireUser();
+  if ("error" in u) return u;
+
+  const user = await db.user.findUnique({
+    where: { id: u.userId },
+    select: { isPlatformOwner: true },
+  });
+  if (!user?.isPlatformOwner) {
+    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+  }
+
+  return { userId: u.userId };
+}
+
+type FindFirstIdDelegate = {
+  findFirst(args: {
+    where: { id: string; campaignId: string };
+    select: { id: true };
+  }): Promise<{ id: string } | null>;
+};
+
+// Verifies a secondary foreign-key id (donorId, voterId, volunteerId, ...)
+// actually belongs to the caller's authorized campaign, not just that the
+// top-level campaignId does. Returns null when valid (or when id is absent),
+// otherwise a ready-to-return 400 response.
+export async function assertBelongsToCampaign(
+  delegate: FindFirstIdDelegate,
+  id: string | null | undefined,
+  campaignId: string,
+  label: string
+): Promise<NextResponse | null> {
+  if (!id) return null;
+  const row = await delegate.findFirst({ where: { id, campaignId }, select: { id: true } });
+  return row ? null : NextResponse.json({ error: `Invalid ${label}` }, { status: 400 });
+}

@@ -20,31 +20,35 @@ import {
   Loader2,
   Clock,
   CheckCircle2,
-  TrendingUp,
   Plus,
   Quote,
   PhoneForwarded,
 } from "lucide-react";
+import { LucideIcon } from "lucide-react";
 import { PersonAvatar } from "@/components/common/person-avatar";
 import { SupportBadge } from "@/components/common/badges";
+import { StatCard } from "@/components/common/stat-card";
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { SUPPORT_LEVELS } from "@/lib/types";
+import type { CallLog, Voter, Volunteer } from "@/lib/types";
 import { useApp } from "@/lib/store";
+import { useClaims } from "@/lib/claims";
+import { useVoters } from "@/lib/voters";
+import { useVolunteers } from "@/lib/volunteers";
+import { LogCallDialog } from "@/components/phonebank/log-call-dialog";
 
-const OUTCOME_INFO: Record<string, { label: string; color: string; icon: any }> = {
+interface VoterWithExtras extends Voter {
+  precinct?: { name: string } | null;
+}
+
+interface CallLogRow extends CallLog {
+  voter?: (CallLog["voter"] & { phone?: string | null; precinct?: { name: string } | null }) | null;
+}
+
+const OUTCOME_INFO: Record<string, { label: string; color: string; icon: LucideIcon }> = {
   contacted: { label: "Contacted", color: "text-emerald-700 bg-emerald-500/10 dark:text-emerald-300", icon: CheckCircle2 },
   "no-answer": { label: "No answer", color: "text-slate-700 bg-slate-500/10 dark:text-slate-300", icon: PhoneOff },
   voicemail: { label: "Voicemail", color: "text-amber-700 bg-amber-500/10 dark:text-amber-300", icon: Voicemail },
@@ -65,8 +69,6 @@ Can we count on your support?
 
 (If undecided) What issues matter most to your household this year?`;
 
-const ISSUES = ["housing", "schools", "public-safety", "budget", "parks", "transit"];
-
 export function PhoneBankView() {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -82,39 +84,19 @@ export function PhoneBankView() {
 
   const { data: logsData, isLoading } = useQuery({
     queryKey: ["call-logs", params.toString()],
-    queryFn: async () => (await fetch(`/api/calls?${params}`)).json(),
+    queryFn: async (): Promise<{ items: CallLogRow[] }> => (await fetch(`/api/calls?${params}`)).json(),
     enabled: !!campaignId,
     refetchInterval: 10_000,
   });
-  const logs: any[] = logsData?.items ?? [];
+  const logs: CallLogRow[] = logsData?.items ?? [];
 
-  const { data: votersData } = useQuery({
-    queryKey: ["phonebank-voters", campaignId],
-    queryFn: async () => (await fetch(`/api/voters?limit=200&campaignId=${campaignId}`)).json(),
-    enabled: !!campaignId,
-    refetchInterval: 10_000,
-  });
-  const voters: any[] = votersData?.items ?? [];
+  const { data: votersData } = useVoters(campaignId, { limit: "200" }, { refetchInterval: 10_000 });
+  const voters: VoterWithExtras[] = votersData?.items ?? [];
 
-  const { data: volunteersData } = useQuery({
-    queryKey: ["phonebank-volunteers", campaignId],
-    queryFn: async () => (await fetch(`/api/volunteers?campaignId=${campaignId}`)).json(),
-    enabled: !!campaignId,
-  });
-  const volunteers: any[] = volunteersData?.items ?? [];
+  const { data: volunteersData } = useVolunteers(campaignId);
+  const volunteers: Volunteer[] = volunteersData?.items ?? [];
 
-  const { data: claimsData } = useQuery({
-    queryKey: ["claims", "call", campaignId],
-    queryFn: async () => (await fetch(`/api/claims?channel=call&campaignId=${campaignId}`)).json(),
-    enabled: !!campaignId,
-    refetchInterval: 8_000,
-  });
-  const claims: any[] = claimsData?.items ?? [];
-  const claimedByOthers = new Map(
-    claims
-      .filter((c: any) => c.volunteerId !== activeVolunteerId)
-      .map((c: any) => [c.voterId, c.volunteerName])
-  );
+  const { claimedByOthers, claim, release } = useClaims("call", campaignId, activeVolunteerId);
 
   // Build call queue: prioritize undecided + low-contact voters, excluding
   // voters actively being called by someone else
@@ -130,13 +112,8 @@ export function PhoneBankView() {
   useEffect(() => {
     if (!currentVoter || !activeVolunteerId) return;
     let cancelled = false;
-    fetch("/api/claims", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ voterId: currentVoter.id, channel: "call", volunteerId: activeVolunteerId }),
-    }).then(async (r) => {
+    claim(currentVoter.id, activeVolunteerId).then(async (r) => {
       if (cancelled) return;
-      qc.invalidateQueries({ queryKey: ["claims", "call"] });
       if (r.status === 409) {
         const body = await r.json();
         toast({ title: `Already claimed by ${body.claimedBy}, skipping`, duration: 2000 });
@@ -145,11 +122,7 @@ export function PhoneBankView() {
     });
     return () => {
       cancelled = true;
-      fetch("/api/claims", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ voterId: currentVoter.id, channel: "call", volunteerId: activeVolunteerId }),
-      }).then(() => qc.invalidateQueries({ queryKey: ["claims", "call"] }));
+      release(currentVoter.id, activeVolunteerId);
     };
   }, [currentVoter?.id, activeVolunteerId]);
 
@@ -181,10 +154,10 @@ export function PhoneBankView() {
 
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <SummaryCard icon={PhoneCall} label="Calls made" value={total} sub={`${contacted} connected`} accent="cyan" />
-        <SummaryCard icon={CheckCircle2} label="Contact rate" value={`${contactRate.toFixed(0)}%`} sub="Pickup / dial" accent="emerald" />
-        <SummaryCard icon={PhoneOff} label="No answer" value={noAnswer} sub="Try evening hours" accent="amber" />
-        <SummaryCard icon={Clock} label="Avg call length" value={`${Math.floor(avgLen / 60)}:${String(Math.round(avgLen % 60)).padStart(2, "0")}`} sub="Connected calls" accent="violet" />
+        <StatCard icon={PhoneCall} label="Calls made" value={total} sub={`${contacted} connected`} accent="cyan" />
+        <StatCard icon={CheckCircle2} label="Contact rate" value={`${contactRate.toFixed(0)}%`} sub="Pickup / dial" accent="emerald" />
+        <StatCard icon={PhoneOff} label="No answer" value={noAnswer} sub="Try evening hours" accent="amber" />
+        <StatCard icon={Clock} label="Avg call length" value={`${Math.floor(avgLen / 60)}:${String(Math.round(avgLen % 60)).padStart(2, "0")}`} sub="Connected calls" accent="violet" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -336,6 +309,7 @@ export function PhoneBankView() {
       </div>
 
       <LogCallDialog
+        key={currentVoter?.id ?? "manual"}
         open={logOpen}
         onOpenChange={setLogOpen}
         voters={currentVoter ? [currentVoter, ...voters] : voters}
@@ -344,7 +318,7 @@ export function PhoneBankView() {
         volunteerId={activeVolunteerId}
         onSaved={() => {
           qc.invalidateQueries({ queryKey: ["call-logs"] });
-          qc.invalidateQueries({ queryKey: ["phonebank-voters"] });
+          qc.invalidateQueries({ queryKey: ["voters"] });
           qc.invalidateQueries({ queryKey: ["dashboard"] });
           toast({ title: "Call outcome logged", duration: 1500 });
           setLogOpen(false);
@@ -352,175 +326,5 @@ export function PhoneBankView() {
         }}
       />
     </div>
-  );
-}
-
-function SummaryCard({ icon: Icon, label, value, sub, accent }: {
-  icon: any; label: string; value: string | number; sub: string;
-  accent: "cyan" | "emerald" | "amber" | "violet";
-}) {
-  const colors: Record<string, string> = {
-    cyan: "text-cyan-600 bg-cyan-500/10",
-    emerald: "text-emerald-600 bg-emerald-500/10",
-    amber: "text-amber-600 bg-amber-500/10",
-    violet: "text-violet-600 bg-violet-500/10",
-  };
-  return (
-    <Card className="p-3 flex items-center gap-2.5">
-      <div className={cn("size-9 rounded-md grid place-items-center", colors[accent])}>
-        <Icon className="size-4.5" />
-      </div>
-      <div>
-        <div className="text-lg font-semibold tabular-nums leading-none">{value}</div>
-        <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{label}</div>
-        <div className="text-[10px] text-muted-foreground/70">{sub}</div>
-      </div>
-    </Card>
-  );
-}
-
-function LogCallDialog({ open, onOpenChange, voters, volunteers, defaultVoterId, volunteerId, onSaved }: {
-  open: boolean; onOpenChange: (o: boolean) => void;
-  voters: any[]; volunteers: any[];
-  defaultVoterId?: string;
-  volunteerId?: string;
-  onSaved: () => void;
-}) {
-  const { toast } = useToast();
-  const [voterId, setVoterId] = useState(defaultVoterId ?? "");
-  const [outcome, setOutcome] = useState("contacted");
-  const [support, setSupport] = useState("");
-  const [issue, setIssue] = useState("");
-  const [callLength, setCallLength] = useState("");
-  const [notes, setNotes] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  // Reset when dialog opens
-  useState(() => {
-    if (defaultVoterId) setVoterId(defaultVoterId);
-  });
-
-  async function save() {
-    if (!voterId) { toast({ title: "Select a voter", variant: "destructive" }); return; }
-    setSaving(true);
-    const voter = voters.find((v) => v.id === voterId);
-    const r = await fetch("/api/calls", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        voterId,
-        volunteerId: volunteerId || undefined,
-        campaignId: voter?.campaignId,
-        outcome,
-        supportLevel: support || undefined,
-        issuePriority: issue || undefined,
-        callLengthSec: callLength ? parseInt(callLength) : 0,
-        notes,
-      }),
-    });
-    setSaving(false);
-    if (r.ok) {
-      setVoterId(""); setOutcome("contacted");
-      setSupport(""); setIssue(""); setCallLength(""); setNotes("");
-      onSaved();
-    } else {
-      toast({ title: "Failed to log", variant: "destructive" });
-    }
-  }
-
-  const activeVolunteer = volunteers.find((v) => v.id === volunteerId);
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Log call outcome</DialogTitle>
-          <DialogDescription>Record what happened on this call.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-          <div>
-            <Label className="text-xs">Voter</Label>
-            <Select value={voterId} onValueChange={setVoterId}>
-              <SelectTrigger className="mt-1"><SelectValue placeholder="Select voter" /></SelectTrigger>
-              <SelectContent>
-                {voters.slice(0, 100).map((v) => (
-                  <SelectItem key={v.id} value={v.id}>
-                    {v.firstName} {v.lastName} — {v.phone ?? "no phone"}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs">Logging as</Label>
-              <div className="mt-1 h-9 flex items-center px-3 rounded-md border bg-muted/30 text-sm text-muted-foreground">
-                {activeVolunteer ? `${activeVolunteer.firstName} ${activeVolunteer.lastName}` : "—"}
-              </div>
-            </div>
-            <div>
-              <Label className="text-xs">Outcome</Label>
-              <Select value={outcome} onValueChange={setOutcome}>
-                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {Object.entries(OUTCOME_INFO).map(([k, info]) => (
-                    <SelectItem key={k} value={k}>{info.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          {outcome === "contacted" && (
-            <>
-              <div>
-                <Label className="text-xs">Support level captured</Label>
-                <Select value={support} onValueChange={setSupport}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="None" /></SelectTrigger>
-                  <SelectContent>
-                    {SUPPORT_LEVELS.map((s) => (
-                      <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-xs">Top issue</Label>
-                  <Select value={issue} onValueChange={setIssue}>
-                    <SelectTrigger className="mt-1"><SelectValue placeholder="None" /></SelectTrigger>
-                    <SelectContent>
-                        {ISSUES.map((i) => (
-                        <SelectItem key={i} value={i}>{i}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-xs">Call length (sec)</Label>
-                  <input
-                    type="number"
-                    value={callLength}
-                    onChange={(e) => setCallLength(e.target.value)}
-                    placeholder="120"
-                    className="mt-1 w-full h-9 rounded-md border bg-background px-3 text-sm"
-                  />
-                </div>
-              </div>
-            </>
-          )}
-          <div>
-            <Label className="text-xs">Notes</Label>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="mt-1 min-h-[60px]" placeholder="Conversation notes…" />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={save} disabled={saving}>
-            {saving ? <Loader2 className="size-4 animate-spin mr-1" /> : null}
-            Log call
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
-import { requireCampaignAccess } from "@/lib/api-auth";
+import { requireCampaignAccess, assertBelongsToCampaign } from "@/lib/api-auth";
 import { parseBody } from "@/lib/api-validate";
 import { taskCreateSchema, taskPatchSchema } from "@/lib/validation/task";
 
@@ -49,13 +49,8 @@ export async function PATCH(req: NextRequest) {
   const access = await requireCampaignAccess(task.campaignId);
   if ("error" in access) return access.error;
 
-  if (assignedVolunteerId) {
-    const volunteer = await db.volunteer.findFirst({
-      where: { id: assignedVolunteerId, campaignId: access.campaignId },
-      select: { id: true },
-    });
-    if (!volunteer) return NextResponse.json({ error: "Invalid volunteer" }, { status: 400 });
-  }
+  const volunteerErr = await assertBelongsToCampaign(db.volunteer, assignedVolunteerId, access.campaignId, "volunteer");
+  if (volunteerErr) return volunteerErr;
 
   const data: Prisma.TaskUpdateInput = {};
   if (status) data.status = status;
@@ -77,13 +72,8 @@ export async function POST(req: NextRequest) {
   const access = await requireCampaignAccess(campaignId);
   if ("error" in access) return access.error;
 
-  if (assignedVolunteerId) {
-    const volunteer = await db.volunteer.findFirst({
-      where: { id: assignedVolunteerId, campaignId: access.campaignId },
-      select: { id: true },
-    });
-    if (!volunteer) return NextResponse.json({ error: "Invalid volunteer" }, { status: 400 });
-  }
+  const volunteerErr = await assertBelongsToCampaign(db.volunteer, assignedVolunteerId, access.campaignId, "volunteer");
+  if (volunteerErr) return volunteerErr;
 
   const task = await db.task.create({
     data: {

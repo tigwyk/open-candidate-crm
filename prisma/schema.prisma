@@ -40,12 +40,13 @@ model Campaign {
 
 // ===== User / Membership (multi-campaign access) =====
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  name         String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String   @id @default(cuid())
+  email           String   @unique
+  passwordHash    String
+  name            String
+  isPlatformOwner Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   memberships  CampaignMembership[]
   sentInvites  Invite[]

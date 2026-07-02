@@ -39,7 +39,7 @@ export async function GET() {
     }
 
     const user = await db.user.create({
-      data: { email, passwordHash, name: "Campaign Owner" },
+      data: { email, passwordHash, name: "Campaign Owner", isPlatformOwner: true },
     });
     await db.campaignMembership.create({
       data: { userId: user.id, campaignId: campaign.id, role: "owner" },

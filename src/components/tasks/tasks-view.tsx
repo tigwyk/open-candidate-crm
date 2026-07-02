@@ -2,36 +2,21 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   ListTodo,
   Circle,
   Clock,
   CheckCircle2,
   AlertCircle,
-  Plus,
-  Loader2,
   Calendar,
-  Flag,
-  User,
 } from "lucide-react";
+import { LucideIcon } from "lucide-react";
 import { PersonAvatar } from "@/components/common/person-avatar";
+import { StatCard } from "@/components/common/stat-card";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -39,10 +24,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatDate, relativeTime } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import { useApp } from "@/lib/store";
+import { useVolunteers } from "@/lib/volunteers";
+import type { Task, Volunteer } from "@/lib/types";
+import { CreateTaskDialog } from "@/components/tasks/create-task-dialog";
 
-const STATUS_INFO: Record<string, { label: string; color: string; icon: any; dot: string }> = {
+const STATUS_INFO: Record<string, { label: string; color: string; icon: LucideIcon; dot: string }> = {
   todo: { label: "To do", color: "bg-slate-500/10 text-slate-700 dark:text-slate-300", icon: Circle, dot: "bg-slate-400" },
   "in-progress": { label: "In progress", color: "bg-cyan-500/10 text-cyan-700 dark:text-cyan-300", icon: Clock, dot: "bg-cyan-500" },
   done: { label: "Done", color: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300", icon: CheckCircle2, dot: "bg-emerald-500" },
@@ -66,22 +54,18 @@ export function TasksView() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["tasks", campaignId],
-    queryFn: async () => (await fetch(`/api/tasks?campaignId=${campaignId}`)).json(),
+    queryFn: async (): Promise<{ items: Task[] }> => (await fetch(`/api/tasks?campaignId=${campaignId}`)).json(),
     enabled: !!campaignId,
   });
-  const tasks: any[] = data?.items ?? [];
+  const tasks: Task[] = data?.items ?? [];
 
-  const { data: volunteersData } = useQuery({
-    queryKey: ["tasks-volunteers", campaignId],
-    queryFn: async () => (await fetch(`/api/volunteers?campaignId=${campaignId}`)).json(),
-    enabled: !!campaignId,
-  });
-  const volunteers: any[] = volunteersData?.items ?? [];
+  const { data: volunteersData } = useVolunteers(campaignId);
+  const volunteers: Volunteer[] = volunteersData?.items ?? [];
 
   const grouped = STATUS_FLOW.reduce((acc, s) => {
     acc[s] = tasks.filter((t) => t.status === s);
     return acc;
-  }, {} as Record<string, any[]>);
+  }, {} as Record<string, Task[]>);
 
   const overdue = tasks.filter((t) => t.dueDate && new Date(t.dueDate).getTime() < Date.now() && t.status !== "done").length;
   const completionRate = tasks.length > 0 ? (grouped.done.length / tasks.length) * 100 : 0;
@@ -115,10 +99,10 @@ export function TasksView() {
     <div className="p-4 md:p-6 space-y-4">
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <SummaryCard icon={ListTodo} label="Open tasks" value={tasks.filter((t) => t.status !== "done").length} sub={`${grouped["in-progress"]?.length ?? 0} in progress`} accent="primary" />
-        <SummaryCard icon={CheckCircle2} label="Completed" value={grouped.done.length} sub={`${completionRate.toFixed(0)}% completion`} accent="emerald" />
-        <SummaryCard icon={AlertCircle} label="Overdue" value={overdue} sub="Past due date" accent="rose" />
-        <SummaryCard icon={Clock} label="Blocked" value={grouped.blocked.length} sub="Needs attention" accent="amber" />
+        <StatCard icon={ListTodo} label="Open tasks" value={tasks.filter((t) => t.status !== "done").length} sub={`${grouped["in-progress"]?.length ?? 0} in progress`} accent="primary" />
+        <StatCard icon={CheckCircle2} label="Completed" value={grouped.done.length} sub={`${completionRate.toFixed(0)}% completion`} accent="emerald" />
+        <StatCard icon={AlertCircle} label="Overdue" value={overdue} sub="Past due date" accent="rose" />
+        <StatCard icon={Clock} label="Blocked" value={grouped.blocked.length} sub="Needs attention" accent="amber" />
       </div>
 
       {/* Action bar */}
@@ -237,132 +221,5 @@ export function TasksView() {
         })}
       </div>
     </div>
-  );
-}
-
-function SummaryCard({ icon: Icon, label, value, sub, accent }: {
-  icon: any; label: string; value: string | number; sub: string;
-  accent: "primary" | "emerald" | "rose" | "amber";
-}) {
-  const colors: Record<string, string> = {
-    primary: "text-primary bg-primary/10",
-    emerald: "text-emerald-600 bg-emerald-500/10",
-    rose: "text-rose-600 bg-rose-500/10",
-    amber: "text-amber-600 bg-amber-500/10",
-  };
-  return (
-    <Card className="p-3 flex items-center gap-2.5">
-      <div className={cn("size-9 rounded-md grid place-items-center", colors[accent])}>
-        <Icon className="size-4.5" />
-      </div>
-      <div>
-        <div className="text-lg font-semibold tabular-nums leading-none">{value}</div>
-        <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{label}</div>
-        <div className="text-[10px] text-muted-foreground/70">{sub}</div>
-      </div>
-    </Card>
-  );
-}
-
-function CreateTaskDialog({ open, onOpenChange, volunteers, campaignId, onSaved }: {
-  open: boolean; onOpenChange: (o: boolean) => void;
-  volunteers: any[]; campaignId: string | null; onSaved: () => void;
-}) {
-  const { toast } = useToast();
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState("medium");
-  const [dueDate, setDueDate] = useState("");
-  const [assignedVolunteerId, setAssignedVolunteerId] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  async function save() {
-    if (!title) {
-      toast({ title: "Title required", variant: "destructive" });
-      return;
-    }
-    setSaving(true);
-    const r = await fetch("/api/tasks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title,
-        description,
-        priority,
-        dueDate: dueDate ? new Date(dueDate).toISOString() : null,
-        assignedVolunteerId: assignedVolunteerId || null,
-        campaignId,
-      }),
-    });
-    setSaving(false);
-    if (r.ok) {
-      setTitle(""); setDescription(""); setPriority("medium");
-      setDueDate(""); setAssignedVolunteerId("");
-      onSaved();
-    } else {
-      toast({ title: "Failed to create task", variant: "destructive" });
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTrigger asChild>
-        <Button size="sm">
-          <Plus className="size-3.5 mr-1" /> New task
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Create a task</DialogTitle>
-          <DialogDescription>Track work, assignments, and deadlines.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div>
-            <Label className="text-xs">Title</Label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Print walk-list packets" className="mt-1" />
-          </div>
-          <div>
-            <Label className="text-xs">Description</Label>
-            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} className="mt-1 min-h-[60px]" placeholder="Details, links, deliverables…" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs">Priority</Label>
-              <Select value={priority} onValueChange={setPriority}>
-                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="urgent">Urgent</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-xs">Due date</Label>
-              <Input value={dueDate} onChange={(e) => setDueDate(e.target.value)} type="date" className="mt-1" />
-            </div>
-          </div>
-          <div>
-            <Label className="text-xs">Assign to volunteer</Label>
-            <Select value={assignedVolunteerId} onValueChange={setAssignedVolunteerId}>
-              <SelectTrigger className="mt-1"><SelectValue placeholder="Unassigned" /></SelectTrigger>
-              <SelectContent>
-                {volunteers.map((v) => (
-                  <SelectItem key={v.id} value={v.id}>{v.firstName} {v.lastName}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={save} disabled={saving}>
-            {saving ? <Loader2 className="size-4 animate-spin mr-1" /> : null}
-            Create task
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

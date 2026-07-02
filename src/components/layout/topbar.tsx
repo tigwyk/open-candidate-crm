@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
+import Link from "next/link";
 import { useApp } from "@/lib/store";
-import { Search, Bell, Plus, Menu, LogOut, Sun, Moon, ChevronsUpDown, UserPlus } from "lucide-react";
+import { Search, Bell, Plus, Menu, LogOut, Sun, Moon, ChevronsUpDown, UserPlus, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,9 +13,10 @@ import { useApp as useAppStore } from "@/lib/store";
 import { Badge } from "@/components/ui/badge";
 import { signOut, useSession } from "next-auth/react";
 import { useTheme } from "next-themes";
-import { useCurrentRole, useMemberships } from "@/lib/memberships";
+import { useCurrentRole, useIsPlatformOwner, useMemberships } from "@/lib/memberships";
 import { useInvites } from "@/lib/invites";
 import { useToast } from "@/hooks/use-toast";
+import { useSavingAction } from "@/lib/use-saving-action";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
@@ -77,6 +79,7 @@ export function Topbar() {
   const setCampaign = useApp((s) => s.setCampaign);
   const currentMembership = memberships.find((m) => m.campaignId === currentCampaignId);
   const currentRole = useCurrentRole();
+  const isPlatformOwner = useIsPlatformOwner();
   const [inviteOpen, setInviteOpen] = useState(false);
 
   const displayName = session?.user?.name ?? session?.user?.email ?? "—";
@@ -142,6 +145,14 @@ export function Topbar() {
         />
       )}
 
+      {isPlatformOwner && (
+        <Button variant="outline" size="icon" className="h-8 w-8" aria-label="Platform admin" asChild>
+          <Link href="/platform-admin">
+            <Shield className="size-4" />
+          </Link>
+        </Button>
+      )}
+
       <div className="hidden sm:flex items-center gap-2 pl-2 border-l">
         <Avatar className="size-8">
           <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
@@ -191,7 +202,7 @@ function InviteTeammateDialog({
   const { data: invitesData } = useInvites(campaignId);
   const invites = invitesData?.items ?? [];
   const [email, setEmail] = useState("");
-  const [saving, setSaving] = useState(false);
+  const { saving, run } = useSavingAction();
   const [revokingId, setRevokingId] = useState<string | null>(null);
 
   function refetchInvites() {
@@ -203,21 +214,24 @@ function InviteTeammateDialog({
       toast({ title: "Email required", variant: "destructive" });
       return;
     }
-    setSaving(true);
-    const r = await fetch("/api/invites", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ campaignId, email }),
-    });
-    setSaving(false);
-    if (r.ok) {
-      setEmail("");
-      toast({ title: "Invite sent" });
-      refetchInvites();
-    } else {
-      const body = await r.json().catch(() => ({}));
-      toast({ title: body?.error ?? "Failed to send invite", variant: "destructive" });
-    }
+    await run(
+      () => fetch("/api/invites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaignId, email }),
+      }),
+      {
+        onSuccess: () => {
+          setEmail("");
+          toast({ title: "Invite sent" });
+          refetchInvites();
+        },
+        onError: async (r) => {
+          const body = await r.json().catch(() => ({}));
+          toast({ title: body?.error ?? "Failed to send invite", variant: "destructive" });
+        },
+      }
+    );
   }
 
   async function revoke(id: string) {
