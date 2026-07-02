@@ -31,10 +31,13 @@ import {
 import { useApp } from "@/lib/store";
 import { useCurrentRole } from "@/lib/memberships";
 import { PersonAvatar } from "@/components/common/person-avatar";
+import { StatCard } from "@/components/common/stat-card";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { formatCompactCurrency, formatCurrency, formatDate, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useSavingAction } from "@/lib/use-saving-action";
+import type { Donor, Donation } from "@/lib/types";
 import {
   Dialog,
   DialogContent,
@@ -77,17 +80,17 @@ export function DonorsView() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["donors", params.toString()],
-    queryFn: async () => (await fetch(`/api/donors?${params}`)).json(),
+    queryFn: async (): Promise<{ items: Donor[] }> => (await fetch(`/api/donors?${params}`)).json(),
     enabled: !!campaignId,
   });
-  const donors: any[] = data?.items ?? [];
+  const donors: Donor[] = data?.items ?? [];
 
   const { data: donationsData } = useQuery({
     queryKey: ["all-donations", campaignId],
-    queryFn: async () => (await fetch(`/api/donations?limit=200&campaignId=${campaignId}`)).json(),
+    queryFn: async (): Promise<{ items: Donation[] }> => (await fetch(`/api/donations?limit=200&campaignId=${campaignId}`)).json(),
     enabled: !!campaignId,
   });
-  const recentDonations: any[] = donationsData?.items ?? [];
+  const recentDonations: Donation[] = donationsData?.items ?? [];
 
   const totalRaised = donors.reduce((s, d) => s + (d.totalDonatedCents ?? 0), 0);
   const avgGift = donors.length > 0 ? totalRaised / donors.length / 100 : 0;
@@ -109,10 +112,10 @@ export function DonorsView() {
     <div className="p-4 md:p-6 space-y-4">
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <SummaryCard icon={DollarSign} label="Total raised" value={formatCompactCurrency(totalRaised)} sub={`${donors.length} donors`} accent="emerald" />
-        <SummaryCard icon={Users} label="Active donors" value={donors.length} sub={`${recurringCount} recurring`} accent="primary" />
-        <SummaryCard icon={TrendingUp} label="Avg gift size" value={formatCurrency(avgGift * 100)} sub="Per donor" accent="amber" />
-        <SummaryCard icon={AlertTriangle} label="Compliance flags" value={complianceIssues} sub="Needs review" accent="rose" />
+        <StatCard icon={DollarSign} label="Total raised" value={formatCompactCurrency(totalRaised)} sub={`${donors.length} donors`} accent="emerald" />
+        <StatCard icon={Users} label="Active donors" value={donors.length} sub={`${recurringCount} recurring`} accent="primary" />
+        <StatCard icon={TrendingUp} label="Avg gift size" value={formatCurrency(avgGift * 100)} sub="Per donor" accent="amber" />
+        <StatCard icon={AlertTriangle} label="Compliance flags" value={complianceIssues} sub="Needs review" accent="rose" />
       </div>
 
       {/* Top donors strip */}
@@ -310,79 +313,55 @@ export function DonorsView() {
   );
 }
 
-function SummaryCard({ icon: Icon, label, value, sub, accent }: {
-  icon: any; label: string; value: string | number; sub: string;
-  accent: "emerald" | "primary" | "amber" | "rose";
-}) {
-  const colors: Record<string, string> = {
-    emerald: "text-emerald-600 bg-emerald-500/10",
-    primary: "text-primary bg-primary/10",
-    amber: "text-amber-600 bg-amber-500/10",
-    rose: "text-rose-600 bg-rose-500/10",
-  };
-  return (
-    <Card className="p-3 flex items-center gap-2.5">
-      <div className={cn("size-9 rounded-md grid place-items-center", colors[accent])}>
-        <Icon className="size-4.5" />
-      </div>
-      <div className="min-w-0">
-        <div className="text-lg font-semibold tabular-nums leading-none truncate">{value}</div>
-        <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{label}</div>
-        <div className="text-[10px] text-muted-foreground/70">{sub}</div>
-      </div>
-    </Card>
-  );
-}
-
 function RecordDonationDialog({ open, onOpenChange, donors, onSaved }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  donors: any[];
+  donors: Donor[];
   onSaved: () => void;
 }) {
   const { toast } = useToast();
+  const { saving, run } = useSavingAction();
   const [donorId, setDonorId] = useState("");
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("online");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [compliance, setCompliance] = useState(true);
   const [notes, setNotes] = useState("");
-  const [saving, setSaving] = useState(false);
 
   async function save() {
     if (!donorId || !amount) {
       toast({ title: "Donor and amount required", variant: "destructive" });
       return;
     }
-    setSaving(true);
     const dollars = parseFloat(amount);
     if (isNaN(dollars) || dollars <= 0) {
       toast({ title: "Invalid amount", variant: "destructive" });
-      setSaving(false);
       return;
     }
     const donor = donors.find((d) => d.id === donorId);
-    const r = await fetch("/api/donations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        donorId,
-        campaignId: donor?.campaignId,
-        amountCents: Math.round(dollars * 100),
-        method,
-        donationDate: new Date(date).toISOString(),
-        complianceVerified: compliance,
-        notes,
+    await run(
+      () => fetch("/api/donations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          donorId,
+          campaignId: donor?.campaignId,
+          amountCents: Math.round(dollars * 100),
+          method,
+          donationDate: new Date(date).toISOString(),
+          complianceVerified: compliance,
+          notes,
+        }),
       }),
-    });
-    setSaving(false);
-    if (r.ok) {
-      setDonorId(""); setAmount(""); setMethod("online"); setNotes("");
-      setCompliance(true);
-      onSaved();
-    } else {
-      toast({ title: "Failed to record donation", variant: "destructive" });
-    }
+      {
+        failTitle: "Failed to record donation",
+        onSuccess: () => {
+          setDonorId(""); setAmount(""); setMethod("online"); setNotes("");
+          setCompliance(true);
+          onSaved();
+        },
+      }
+    );
   }
 
   return (

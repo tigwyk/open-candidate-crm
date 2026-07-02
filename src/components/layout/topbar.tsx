@@ -15,6 +15,7 @@ import { useTheme } from "next-themes";
 import { useCurrentRole, useMemberships } from "@/lib/memberships";
 import { useInvites } from "@/lib/invites";
 import { useToast } from "@/hooks/use-toast";
+import { useSavingAction } from "@/lib/use-saving-action";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
@@ -191,7 +192,7 @@ function InviteTeammateDialog({
   const { data: invitesData } = useInvites(campaignId);
   const invites = invitesData?.items ?? [];
   const [email, setEmail] = useState("");
-  const [saving, setSaving] = useState(false);
+  const { saving, run } = useSavingAction();
   const [revokingId, setRevokingId] = useState<string | null>(null);
 
   function refetchInvites() {
@@ -203,21 +204,24 @@ function InviteTeammateDialog({
       toast({ title: "Email required", variant: "destructive" });
       return;
     }
-    setSaving(true);
-    const r = await fetch("/api/invites", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ campaignId, email }),
-    });
-    setSaving(false);
-    if (r.ok) {
-      setEmail("");
-      toast({ title: "Invite sent" });
-      refetchInvites();
-    } else {
-      const body = await r.json().catch(() => ({}));
-      toast({ title: body?.error ?? "Failed to send invite", variant: "destructive" });
-    }
+    await run(
+      () => fetch("/api/invites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaignId, email }),
+      }),
+      {
+        onSuccess: () => {
+          setEmail("");
+          toast({ title: "Invite sent" });
+          refetchInvites();
+        },
+        onError: async (r) => {
+          const body = await r.json().catch(() => ({}));
+          toast({ title: body?.error ?? "Failed to send invite", variant: "destructive" });
+        },
+      }
+    );
   }
 
   async function revoke(id: string) {

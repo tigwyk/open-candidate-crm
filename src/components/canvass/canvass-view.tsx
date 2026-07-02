@@ -21,14 +21,14 @@ import {
   MapPin,
   Loader2,
   ClipboardList,
-  TrendingUp,
   Plus,
 } from "lucide-react";
-import { PersonAvatar } from "@/components/common/person-avatar";
+import { LucideIcon } from "lucide-react";
 import { SupportBadge } from "@/components/common/badges";
+import { StatCard } from "@/components/common/stat-card";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { formatDateTime, relativeTime } from "@/lib/format";
+import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -40,10 +40,24 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { SUPPORT_LEVELS } from "@/lib/types";
+import { SUPPORT_LEVELS, type CanvassLog, type Voter, type Volunteer } from "@/lib/types";
 import { useApp } from "@/lib/store";
+import { useClaims } from "@/lib/claims";
+import { useVoters } from "@/lib/voters";
+import { useVolunteers } from "@/lib/volunteers";
+import { useSavingAction } from "@/lib/use-saving-action";
 
-const OUTCOME_INFO: Record<string, { label: string; color: string; icon: any }> = {
+interface VoterWithExtras extends Voter {
+  precinct?: { name: string } | null;
+  household?: { address: string } | null;
+}
+
+interface CanvassLogRow extends CanvassLog {
+  household?: { address: string } | null;
+  voter?: (CanvassLog["voter"] & { precinct?: { name: string } | null }) | null;
+}
+
+const OUTCOME_INFO: Record<string, { label: string; color: string; icon: LucideIcon }> = {
   canvassed: { label: "Canvassed", color: "text-emerald-700 bg-emerald-500/10 dark:text-emerald-300", icon: CheckCircle2 },
   "not-home": { label: "Not home", color: "text-amber-700 bg-amber-500/10 dark:text-amber-300", icon: Home },
   refused: { label: "Refused", color: "text-rose-700 bg-rose-500/10 dark:text-rose-300", icon: Ban },
@@ -68,52 +82,27 @@ export function CanvassView() {
 
   const { data: logsData, isLoading } = useQuery({
     queryKey: ["canvass-logs", params.toString()],
-    queryFn: async () => (await fetch(`/api/canvass?${params}`)).json(),
+    queryFn: async (): Promise<{ items: CanvassLogRow[] }> => (await fetch(`/api/canvass?${params}`)).json(),
     enabled: !!campaignId,
     refetchInterval: 10_000,
   });
-  const logs: any[] = logsData?.items ?? [];
+  const logs: CanvassLogRow[] = logsData?.items ?? [];
 
-  const { data: votersData } = useQuery({
-    queryKey: ["canvass-voters", campaignId],
-    queryFn: async () => (await fetch(`/api/voters?limit=200&campaignId=${campaignId}`)).json(),
-    enabled: !!campaignId,
-    refetchInterval: 10_000,
-  });
-  const voters: any[] = votersData?.items ?? [];
+  const { data: votersData } = useVoters(campaignId, { limit: "200" }, { refetchInterval: 10_000 });
+  const voters: VoterWithExtras[] = votersData?.items ?? [];
 
-  const { data: volunteersData } = useQuery({
-    queryKey: ["canvass-volunteers", campaignId],
-    queryFn: async () => (await fetch(`/api/volunteers?campaignId=${campaignId}`)).json(),
-    enabled: !!campaignId,
-  });
-  const volunteers: any[] = volunteersData?.items ?? [];
+  const { data: volunteersData } = useVolunteers(campaignId);
+  const volunteers: Volunteer[] = volunteersData?.items ?? [];
 
-  const { data: claimsData } = useQuery({
-    queryKey: ["claims", "canvass", campaignId],
-    queryFn: async () => (await fetch(`/api/claims?channel=canvass&campaignId=${campaignId}`)).json(),
-    enabled: !!campaignId,
-    refetchInterval: 8_000,
-  });
-  const claims: any[] = claimsData?.items ?? [];
-  const claimedByOthers = new Map(
-    claims
-      .filter((c: any) => c.volunteerId !== activeVolunteerId)
-      .map((c: any) => [c.voterId, c.volunteerName])
-  );
+  const { claimedByOthers, claim, release } = useClaims("canvass", campaignId, activeVolunteerId);
 
-  async function claimVoter(voter: any) {
+  async function claimVoter(voter: VoterWithExtras) {
     if (!activeVolunteerId) {
       toast({ title: "Select who's canvassing first", variant: "destructive" });
       return;
     }
     if (claimedByOthers.has(voter.id)) return;
-    const r = await fetch("/api/claims", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ voterId: voter.id, channel: "canvass", volunteerId: activeVolunteerId }),
-    });
-    qc.invalidateQueries({ queryKey: ["claims", "canvass"] });
+    const r = await claim(voter.id, activeVolunteerId);
     if (r.status === 409) {
       const body = await r.json();
       toast({ title: `Already being knocked by ${body.claimedBy}`, variant: "destructive" });
@@ -125,18 +114,14 @@ export function CanvassView() {
 
   function releaseClaim() {
     if (!claimedVoterId || !activeVolunteerId) return;
-    fetch("/api/claims", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ voterId: claimedVoterId, channel: "canvass", volunteerId: activeVolunteerId }),
-    }).then(() => qc.invalidateQueries({ queryKey: ["claims", "canvass"] }));
+    release(claimedVoterId, activeVolunteerId);
     setClaimedVoterId(null);
   }
 
   // Build walk lists grouped by precinct (top 5 streets to knock)
   const walkLists = (voters || [])
     .filter((v) => v.supportLevel === "undecided" || v.supportLevel === "unknown" || v.supportLevel === "lean-support")
-    .reduce<Record<string, any[]>>((acc, v) => {
+    .reduce<Record<string, VoterWithExtras[]>>((acc, v) => {
       const key = v.precinct?.name ?? "Unassigned";
       if (!acc[key]) acc[key] = [];
       acc[key].push(v);
@@ -172,10 +157,10 @@ export function CanvassView() {
 
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <SummaryCard icon={DoorOpen} label="Doors knocked" value={total} sub="Total attempts" accent="violet" />
-        <SummaryCard icon={CheckCircle2} label="Contact rate" value={`${contactRate.toFixed(0)}%`} sub={`${contacted} reached`} accent="emerald" />
-        <SummaryCard icon={Home} label="Not home" value={notHome} sub="Try again later" accent="amber" />
-        <SummaryCard icon={MapPin} label="Yard signs placed" value={yardSigns} sub="Via canvass" accent="rose" />
+        <StatCard icon={DoorOpen} label="Doors knocked" value={total} sub="Total attempts" accent="violet" />
+        <StatCard icon={CheckCircle2} label="Contact rate" value={`${contactRate.toFixed(0)}%`} sub={`${contacted} reached`} accent="emerald" />
+        <StatCard icon={Home} label="Not home" value={notHome} sub="Try again later" accent="amber" />
+        <StatCard icon={MapPin} label="Yard signs placed" value={yardSigns} sub="Via canvass" accent="rose" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -322,7 +307,7 @@ export function CanvassView() {
         volunteerId={activeVolunteerId}
         onSaved={() => {
           qc.invalidateQueries({ queryKey: ["canvass-logs"] });
-          qc.invalidateQueries({ queryKey: ["canvass-voters"] });
+          qc.invalidateQueries({ queryKey: ["voters"] });
           qc.invalidateQueries({ queryKey: ["dashboard"] });
           toast({ title: "Canvass outcome logged", duration: 1500 });
           setLogOpen(false);
@@ -333,73 +318,50 @@ export function CanvassView() {
   );
 }
 
-function SummaryCard({ icon: Icon, label, value, sub, accent }: {
-  icon: any; label: string; value: string | number; sub: string;
-  accent: "violet" | "emerald" | "amber" | "rose";
-}) {
-  const colors: Record<string, string> = {
-    violet: "text-violet-600 bg-violet-500/10",
-    emerald: "text-emerald-600 bg-emerald-500/10",
-    amber: "text-amber-600 bg-amber-500/10",
-    rose: "text-rose-600 bg-rose-500/10",
-  };
-  return (
-    <Card className="p-3 flex items-center gap-2.5">
-      <div className={cn("size-9 rounded-md grid place-items-center", colors[accent])}>
-        <Icon className="size-4.5" />
-      </div>
-      <div>
-        <div className="text-lg font-semibold tabular-nums leading-none">{value}</div>
-        <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{label}</div>
-        <div className="text-[10px] text-muted-foreground/70">{sub}</div>
-      </div>
-    </Card>
-  );
-}
-
 function LogCanvassDialog({ open, onOpenChange, voters, volunteers, defaultVoterId, volunteerId, onSaved }: {
   open: boolean; onOpenChange: (o: boolean) => void;
-  voters: any[]; volunteers: any[];
+  voters: VoterWithExtras[]; volunteers: Volunteer[];
   defaultVoterId?: string;
   volunteerId?: string;
   onSaved: () => void;
 }) {
   const { toast } = useToast();
+  const { saving, run } = useSavingAction();
   const [voterId, setVoterId] = useState(defaultVoterId ?? "");
   const [outcome, setOutcome] = useState("canvassed");
   const [support, setSupport] = useState("");
   const [yardSign, setYardSign] = useState(false);
   const [issue, setIssue] = useState("");
   const [notes, setNotes] = useState("");
-  const [saving, setSaving] = useState(false);
 
   async function save() {
     if (!voterId) { toast({ title: "Select a voter", variant: "destructive" }); return; }
-    setSaving(true);
     const voter = voters.find((v) => v.id === voterId);
-    const r = await fetch("/api/canvass", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        voterId,
-        householdId: voter?.householdId,
-        volunteerId: volunteerId || undefined,
-        campaignId: voter?.campaignId,
-        outcome,
-        supportLevel: support || undefined,
-        yardSign,
-        issuePriority: issue || undefined,
-        notes,
+    await run(
+      () => fetch("/api/canvass", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          voterId,
+          householdId: voter?.householdId,
+          volunteerId: volunteerId || undefined,
+          campaignId: voter?.campaignId,
+          outcome,
+          supportLevel: support || undefined,
+          yardSign,
+          issuePriority: issue || undefined,
+          notes,
+        }),
       }),
-    });
-    setSaving(false);
-    if (r.ok) {
-      setVoterId(""); setOutcome("canvassed");
-      setSupport(""); setYardSign(false); setIssue(""); setNotes("");
-      onSaved();
-    } else {
-      toast({ title: "Failed to log", variant: "destructive" });
-    }
+      {
+        failTitle: "Failed to log",
+        onSuccess: () => {
+          setVoterId(""); setOutcome("canvassed");
+          setSupport(""); setYardSign(false); setIssue(""); setNotes("");
+          onSaved();
+        },
+      }
+    );
   }
 
   const activeVolunteer = volunteers.find((v) => v.id === volunteerId);

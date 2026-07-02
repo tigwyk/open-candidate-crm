@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,9 @@ import {
   Loader2,
   Star,
 } from "lucide-react";
+import { LucideIcon } from "lucide-react";
 import { PersonAvatar } from "@/components/common/person-avatar";
+import { StatCard } from "@/components/common/stat-card";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import {
@@ -30,8 +32,14 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/lib/store";
+import { useVolunteers } from "@/lib/volunteers";
+import type { Volunteer } from "@/lib/types";
 
-const ROLE_INFO: Record<string, { label: string; color: string; icon: any }> = {
+interface VolunteerRow extends Volunteer {
+  _count?: { canvassLogs: number; callLogs: number; assignedTasks: number };
+}
+
+const ROLE_INFO: Record<string, { label: string; color: string; icon: LucideIcon }> = {
   coordinator: { label: "Coordinator", color: "bg-violet-500/10 text-violet-700 dark:text-violet-300", icon: Star },
   canvasser: { label: "Canvasser", color: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300", icon: DoorOpen },
   "phone-banker": { label: "Phone Banker", color: "bg-cyan-500/10 text-cyan-700 dark:text-cyan-300", icon: PhoneCall },
@@ -52,13 +60,9 @@ export function VolunteersView() {
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const campaignId = useApp((s) => s.currentCampaignId);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["volunteers", campaignId],
-    queryFn: async () => (await fetch(`/api/volunteers?campaignId=${campaignId}`)).json(),
-    enabled: !!campaignId,
-  });
+  const { data, isLoading } = useVolunteers(campaignId);
 
-  const volunteers: any[] = data?.items ?? [];
+  const volunteers: VolunteerRow[] = (data?.items as VolunteerRow[] | undefined) ?? [];
   const filtered = roleFilter === "all" ? volunteers : volunteers.filter((v) => v.role === roleFilter);
 
   // Summary metrics
@@ -85,10 +89,10 @@ export function VolunteersView() {
     <div className="p-4 md:p-6 space-y-4">
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <SummaryCard icon={HeartHandshake} label="Active volunteers" value={active} sub={`${leads} team leads`} accent="violet" />
-        <SummaryCard icon={Clock} label="Hours logged" value={totalHours.toFixed(0)} sub={`of ${totalPledged} pledged`} accent="emerald" />
-        <SummaryCard icon={DoorOpen} label="Doors knocked" value={totalDoors} sub="By volunteer team" accent="amber" />
-        <SummaryCard icon={PhoneCall} label="Calls made" value={totalCalls} sub="By volunteer team" accent="cyan" />
+        <StatCard icon={HeartHandshake} label="Active volunteers" value={active} sub={`${leads} team leads`} accent="violet" />
+        <StatCard icon={Clock} label="Hours logged" value={totalHours.toFixed(0)} sub={`of ${totalPledged} pledged`} accent="emerald" />
+        <StatCard icon={DoorOpen} label="Doors knocked" value={totalDoors} sub="By volunteer team" accent="amber" />
+        <StatCard icon={PhoneCall} label="Calls made" value={totalCalls} sub="By volunteer team" accent="cyan" />
       </div>
 
       {/* Filter + actions */}
@@ -206,31 +210,7 @@ export function VolunteersView() {
   );
 }
 
-function SummaryCard({ icon: Icon, label, value, sub, accent }: {
-  icon: any; label: string; value: string | number; sub: string;
-  accent: "violet" | "emerald" | "amber" | "cyan";
-}) {
-  const colors: Record<string, string> = {
-    violet: "text-violet-600 bg-violet-500/10",
-    emerald: "text-emerald-600 bg-emerald-500/10",
-    amber: "text-amber-600 bg-amber-500/10",
-    cyan: "text-cyan-600 bg-cyan-500/10",
-  };
-  return (
-    <Card className="p-3 flex items-center gap-2.5">
-      <div className={cn("size-9 rounded-md grid place-items-center", colors[accent])}>
-        <Icon className="size-4.5" />
-      </div>
-      <div>
-        <div className="text-lg font-semibold tabular-nums leading-none">{value}</div>
-        <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{label}</div>
-        <div className="text-[10px] text-muted-foreground/70">{sub}</div>
-      </div>
-    </Card>
-  );
-}
-
-function Stat({ icon: Icon, value, label }: { icon: any; value: number; label: string }) {
+function Stat({ icon: Icon, value, label }: { icon: LucideIcon; value: number; label: string }) {
   return (
     <div className="rounded-md bg-muted/40 py-1.5">
       <Icon className="size-3 mx-auto text-muted-foreground" />

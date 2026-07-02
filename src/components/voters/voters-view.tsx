@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { PersonAvatar } from "@/components/common/person-avatar";
 import { SupportBadge, PartyBadge } from "@/components/common/badges";
+import { StatCard } from "@/components/common/stat-card";
 import { SUPPORT_LEVELS, SUPPORT_SOURCE_LABELS, type Voter } from "@/lib/types";
 import { formatCurrency, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -45,11 +46,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useApp } from "@/lib/store";
+import { useVoters } from "@/lib/voters";
 
 interface VoterRow extends Voter {
   precinct?: { name: string; code: string } | null;
   household?: { address: string } | null;
   _count?: { callLogs: number; canvassLogs: number; donations: number };
+}
+
+interface Precinct {
+  id: string;
+  name: string;
 }
 
 export function VotersView() {
@@ -71,29 +78,20 @@ export function VotersView() {
 
   const { data: precinctsData } = useQuery({
     queryKey: ["precincts", campaignId],
-    queryFn: async () => (await fetch(`/api/precincts?campaignId=${campaignId}`)).json(),
+    queryFn: async (): Promise<{ items: Precinct[] }> => (await fetch(`/api/precincts?campaignId=${campaignId}`)).json(),
     enabled: !!campaignId,
   });
 
-  const params = new URLSearchParams();
-  if (campaignId) params.set("campaignId", campaignId);
-  if (debouncedQ) params.set("q", debouncedQ);
-  if (supportFilter !== "all") params.set("support", supportFilter);
-  if (partyFilter !== "all") params.set("party", partyFilter);
-  if (precinctFilter !== "all") params.set("precinctId", precinctFilter);
-  if (contactedOnly) params.set("contacted", "1");
+  const extraParams: Record<string, string> = {};
+  if (debouncedQ) extraParams.q = debouncedQ;
+  if (supportFilter !== "all") extraParams.support = supportFilter;
+  if (partyFilter !== "all") extraParams.party = partyFilter;
+  if (precinctFilter !== "all") extraParams.precinctId = precinctFilter;
+  if (contactedOnly) extraParams.contacted = "1";
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["voters", params.toString()],
-    queryFn: async () => {
-      const r = await fetch(`/api/voters?${params}`);
-      return r.json();
-    },
-    enabled: !!campaignId,
-    staleTime: 10_000,
-  });
+  const { data, isLoading } = useVoters(campaignId, extraParams, { staleTime: 10_000 });
 
-  const voters: VoterRow[] = data?.items ?? [];
+  const voters: VoterRow[] = (data?.items as VoterRow[] | undefined) ?? [];
 
   // Compute summary
   const summary = useMemo(() => {
@@ -124,11 +122,11 @@ export function VotersView() {
       {/* Summary strip */}
       {summary && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <SummaryPill icon={Users} label="Total" value={summary.total} />
-          <SummaryPill icon={Vote} label="Supporters" value={summary.supporters} accent="emerald" />
-          <SummaryPill icon={PhoneCall} label="Contacted" value={summary.contacted} accent="cyan" />
-          <SummaryPill icon={HeartHandshake} label="Volunteers" value={summary.volunteers} accent="violet" />
-          <SummaryPill icon={MapPin} label="Yard signs" value={summary.yardsigns} accent="amber" />
+          <StatCard icon={Users} label="Total" value={summary.total} />
+          <StatCard icon={Vote} label="Supporters" value={summary.supporters} accent="emerald" />
+          <StatCard icon={PhoneCall} label="Contacted" value={summary.contacted} accent="cyan" />
+          <StatCard icon={HeartHandshake} label="Volunteers" value={summary.volunteers} accent="violet" />
+          <StatCard icon={MapPin} label="Yard signs" value={summary.yardsigns} accent="amber" />
         </div>
       )}
 
@@ -172,7 +170,7 @@ export function VotersView() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All precincts</SelectItem>
-              {(precinctsData?.items ?? []).map((p: any) => (
+              {(precinctsData?.items ?? []).map((p) => (
                 <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
               ))}
             </SelectContent>
@@ -299,32 +297,6 @@ export function VotersView() {
         onUpdate={updateVoter}
       />
     </div>
-  );
-}
-
-function SummaryPill({ icon: Icon, label, value, accent = "primary" }: {
-  icon: any;
-  label: string;
-  value: number | string;
-  accent?: "primary" | "emerald" | "violet" | "amber" | "cyan";
-}) {
-  const colors: Record<string, string> = {
-    primary: "text-primary bg-primary/10",
-    emerald: "text-emerald-600 bg-emerald-500/10",
-    violet: "text-violet-600 bg-violet-500/10",
-    amber: "text-amber-600 bg-amber-500/10",
-    cyan: "text-cyan-600 bg-cyan-500/10",
-  };
-  return (
-    <Card className="p-3 flex items-center gap-2.5">
-      <div className={`size-8 rounded-md grid place-items-center ${colors[accent]}`}>
-        <Icon className="size-4" />
-      </div>
-      <div>
-        <div className="text-base font-semibold tabular-nums leading-none">{value}</div>
-        <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{label}</div>
-      </div>
-    </Card>
   );
 }
 
