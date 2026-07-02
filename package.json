@@ -1,6 +1,6 @@
 {
   "name": "campaignground",
-  "version": "0.2.0",
+  "version": "1.0.0-rc.1",
   "description": "A voter, volunteer, donor, and outreach CRM built for local election campaigns.",
   "repository": {
     "type": "git",
@@ -16,6 +16,7 @@
     "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
+    "test": "bun test",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

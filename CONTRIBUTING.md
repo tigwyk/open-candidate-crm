@@ -8,7 +8,7 @@ See the [README quickstart](README.md#quickstart) — `docker compose up -d`, `b
 
 1. Branch off `main`.
 2. Make your change.
-3. Open a PR against `main`. CI (`.github/workflows/ci.yml`) runs lint, a Postgres-backed migration check, and a production build on every push — it needs to be green before merge.
+3. Open a PR against `main`. CI (`.github/workflows/ci.yml`) runs lint, a Postgres-backed migration check, a production build, and the test suite on every push — it needs to be green before merge.
 
 ## Code style
 
@@ -18,7 +18,9 @@ See the [README quickstart](README.md#quickstart) — `docker compose up -d`, `b
 
 ## Tests
 
-There isn't a test suite yet. If you're adding one, open an issue first to discuss the approach (framework choice, what to cover) before sinking time into it.
+Run `bun run build && bun test`. Tests are real HTTP integration tests against the actual standalone build plus a dedicated `<database>_test` Postgres database (created and migrated automatically) — not mocked route handlers — so a production build has to exist first. `tests/unit/` covers pure functions (validation schemas, `rate-limit.ts`); `tests/integration/` drives real signup/login/invite flows and CRUD operations through the live server, matching how this app has always been manually verified (curl against a running instance).
+
+If you add a new mutating API route that accepts a foreign-key id (a `donorId`, `voterId`, `volunteerId`, etc.), add an IDOR regression test alongside it — reference an id from a different campaign and assert the route rejects it (see `tests/integration/security.test.ts` for the existing pattern). This mirrors real bugs this project has shipped and caught.
 
 ## Database changes
 
