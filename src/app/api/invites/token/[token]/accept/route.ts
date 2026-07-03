@@ -30,7 +30,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
 
   let userId: string;
 
-  if (session?.user?.id) {
+  if (session?.user?.id && session.user.email === invite.email) {
     userId = session.user.id;
   } else {
     const existing = await db.user.findUnique({ where: { email: invite.email } });

@@ -169,7 +169,7 @@ export default function InvitePage() {
     );
   }
 
-  if (sessionStatus === "authenticated" && session?.user) {
+  if (sessionStatus === "authenticated" && session?.user?.email === invite.email) {
     return (
       <InviteShell
         title={`Join ${invite.campaignName}`}
@@ -183,10 +183,17 @@ export default function InvitePage() {
     );
   }
 
+  const signedInAsDifferentUser =
+    sessionStatus === "authenticated" && session?.user?.email && session.user.email !== invite.email;
+
   return (
     <InviteShell
       title={`Join ${invite.campaignName}`}
-      description={`Create your account to accept this invite for ${invite.email}.`}
+      description={
+        signedInAsDifferentUser
+          ? `You're signed in as ${session!.user!.email}, but this invite is for ${invite.email}. Create an account for ${invite.email} below.`
+          : `Create your account to accept this invite for ${invite.email}.`
+      }
     >
       <form onSubmit={acceptNewAccount} className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
