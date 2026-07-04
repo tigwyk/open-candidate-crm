@@ -20,7 +20,7 @@ export default function NotFound() {
         </CardHeader>
         <CardContent>
           <Button asChild>
-            <Link href="/">Back to app</Link>
+            <Link href="/">Back home</Link>
           </Button>
         </CardContent>
       </Card>

@@ -131,6 +131,12 @@
   background-size: 32px 32px;
 }
 
+.dark .bg-civic-grid {
+  background-image:
+    linear-gradient(to right, oklch(1 0 0 / 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(1 0 0 / 0.06) 1px, transparent 1px);
+}
+
 /* Custom scrollbar for long lists */
 .scroll-area-thin::-webkit-scrollbar { width: 8px; height: 8px; }
 .scroll-area-thin::-webkit-scrollbar-thumb {

@@ -49,7 +49,7 @@ function LoginForm() {
       setError("Invalid email or password");
       return;
     }
-    router.push(next && next.startsWith("/") ? next : "/");
+    router.push(next && next.startsWith("/") ? next : "/dashboard");
     router.refresh();
   }
 

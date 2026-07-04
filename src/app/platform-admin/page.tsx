@@ -100,7 +100,7 @@ function PlatformAdminContent() {
             <CardDescription>This page is only visible to the platform owner.</CardDescription>
           </CardHeader>
           <CardContent>
-            <Button variant="outline" onClick={() => router.push("/")}>
+            <Button variant="outline" onClick={() => router.push("/dashboard")}>
               Back to app
             </Button>
           </CardContent>

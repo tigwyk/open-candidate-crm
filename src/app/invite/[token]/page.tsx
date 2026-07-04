@@ -59,7 +59,7 @@ export default function InvitePage() {
       setFormError(body?.error ?? "Failed to accept invite.");
       return;
     }
-    router.push("/");
+    router.push("/dashboard");
     router.refresh();
   }
 
@@ -101,7 +101,7 @@ export default function InvitePage() {
       router.push("/login");
       return;
     }
-    router.push("/");
+    router.push("/dashboard");
     router.refresh();
   }
 
