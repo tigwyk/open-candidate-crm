@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
+import { BrandMark } from "@/components/marketing/brand-mark";
 
 export function MarketingFooter() {
   return (
@@ -7,7 +8,7 @@ export function MarketingFooter() {
       <Separator className="mb-6" />
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
         <div className="flex items-center gap-2">
-          <img src="/logo.svg" alt="" width={20} height={20} className="size-5" />
+          <BrandMark className="size-5" />
           <span>© {new Date().getFullYear()} CampaignGround</span>
         </div>
         <div className="flex items-center gap-4">

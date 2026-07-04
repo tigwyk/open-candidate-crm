@@ -11,6 +11,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { BrandMark } from "@/components/marketing/brand-mark";
 
 const LINKS = [{ href: "#features", label: "Features" }];
 
@@ -21,7 +22,7 @@ export function MarketingNav() {
     <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 md:px-6">
         <Link href="/" className="flex items-center gap-2.5">
-          <img src="/logo.svg" alt="" width={30} height={30} className="size-8" />
+          <BrandMark className="size-8" />
           <span className="font-semibold text-[15px]">CampaignGround</span>
         </Link>
 
