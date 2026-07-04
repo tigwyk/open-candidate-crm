@@ -4,9 +4,17 @@ import type { NextConfig } from "next";
 // next-themes' inline theme-detection script; a nonce-based CSP would remove
 // the need for it but requires middleware wiring — left as a future
 // tightening rather than blocking on it here.
+// 'unsafe-eval' is added only in development: Next's dev-mode HMR/debugging
+// (Turbopack and webpack alike) relies on eval(), which the production build
+// never uses — so the production CSP stays eval-free.
+const scriptSrc =
+  process.env.NODE_ENV === "production"
+    ? "script-src 'self' 'unsafe-inline'"
+    : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
+
 const csp = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  scriptSrc,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
